@@ -206,50 +206,140 @@ async function installCertificate(certificateContent) {
     const platform = os.platform()
     
     if (platform === 'win32') {
-      // Windows - use certlm.msc
+      // Windows - use PowerShell with UAC elevation
       const tempFile = path.join(os.tmpdir(), `install_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
-      const certlm = spawn('certlm', ['-addstore', 'Root', tempFile], { shell: true })
+      // Create a PowerShell script that requests elevation
+      const scriptContent = `
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("${tempFile}")
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+try {
+  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+  $store.Add($cert)
+  $store.Close()
+  Write-Output "SUCCESS: Certificate installed successfully"
+} catch {
+  Write-Output "ERROR: $($_.Exception.Message)"
+}
+Remove-Item "${tempFile}" -Force -ErrorAction SilentlyContinue
+`
       
-      certlm.on('close', (code) => {
-        fs.unlinkSync(tempFile)
-        if (code === 0) {
-          resolve({ success: true, message: 'Certificate installed successfully' })
+      const scriptFile = path.join(os.tmpdir(), `install_cert_${Date.now()}.ps1`)
+      fs.writeFileSync(scriptFile, scriptContent)
+      
+      // Execute PowerShell with elevation request
+      const powershell = spawn('powershell', [
+        '-Command',
+        `Start-Process PowerShell -ArgumentList "-ExecutionPolicy Bypass -File \\"${scriptFile}\\"" -Verb RunAs -Wait -WindowStyle Hidden; Get-Content "${scriptFile}.log" -ErrorAction SilentlyContinue`
+      ], { shell: true })
+      
+      let output = ''
+      powershell.stdout.on('data', (data) => {
+        output += data.toString()
+      })
+      
+      powershell.stderr.on('data', (data) => {
+        output += data.toString()
+      })
+      
+      powershell.on('close', (code) => {
+        try { 
+          fs.unlinkSync(tempFile) 
+          fs.unlinkSync(scriptFile)
+        } catch (e) {}
+        
+        if (output.includes('SUCCESS:') || code === 0) {
+          resolve({ success: true, message: '证书导入成功（已自动提权）' })
+        } else if (output.includes('ERROR:')) {
+          const errorMsg = output.split('ERROR:')[1]?.trim() || 'Unknown error'
+          resolve({ success: false, error: `证书导入失败: ${errorMsg}` })
         } else {
-          resolve({ success: false, error: 'Failed to install certificate' })
+          resolve({ success: false, error: '证书导入失败，可能用户取消了权限提升或系统不支持' })
         }
       })
       
-      certlm.on('error', (error) => {
-        fs.unlinkSync(tempFile)
-        resolve({ success: false, error: error.message })
+      powershell.on('error', (error) => {
+        try { 
+          fs.unlinkSync(tempFile) 
+          fs.unlinkSync(scriptFile)
+        } catch (e) {}
+        resolve({ success: false, error: `权限提升失败: ${error.message}` })
       })
       
     } else if (platform === 'darwin') {
-      // macOS - use security command
+      // macOS - use osascript for privilege escalation with security command
       const tempFile = path.join(os.tmpdir(), `install_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
-      const security = spawn('security', ['add-trusted-cert', '-d', '-r', 'trustRoot', '-k', '/Library/Keychains/System.keychain', tempFile])
+      // Create an AppleScript that prompts for admin password and runs security command
+      const appleScript = `
+do shell script "security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain '${tempFile}'" with administrator privileges
+`
       
-      security.on('close', (code) => {
-        fs.unlinkSync(tempFile)
+      const osascript = spawn('osascript', ['-e', appleScript])
+      
+      let output = ''
+      let errorOutput = ''
+      
+      osascript.stdout.on('data', (data) => {
+        output += data.toString()
+      })
+      
+      osascript.stderr.on('data', (data) => {
+        errorOutput += data.toString()
+      })
+      
+      osascript.on('close', (code) => {
+        try { fs.unlinkSync(tempFile) } catch (e) {}
+        
         if (code === 0) {
-          resolve({ success: true, message: 'Certificate installed successfully' })
+          resolve({ success: true, message: '证书导入成功（已自动提权）' })
         } else {
-          resolve({ success: false, error: 'Failed to install certificate. May require administrator privileges.' })
+          const errorMsg = errorOutput || '未知错误'
+          if (errorMsg.includes('User cancelled') || errorMsg.includes('用户取消')) {
+            resolve({ success: false, error: '用户取消了权限提升请求' })
+          } else {
+            resolve({ success: false, error: `证书导入失败: ${errorMsg}` })
+          }
         }
       })
       
-      security.on('error', (error) => {
-        fs.unlinkSync(tempFile)
-        resolve({ success: false, error: error.message })
+      osascript.on('error', (error) => {
+        try { fs.unlinkSync(tempFile) } catch (e) {}
+        resolve({ success: false, error: `权限提升失败: ${error.message}` })
       })
       
     } else {
-      // Linux or other
-      resolve({ success: false, error: 'Platform not supported yet' })
+      // Linux or other - use pkexec for privilege escalation
+      const tempFile = path.join(os.tmpdir(), `install_cert_${Date.now()}.pem`)
+      fs.writeFileSync(tempFile, certificateContent)
+      
+      // Try to copy certificate to system trust store with pkexec
+      const pkexec = spawn('pkexec', ['cp', tempFile, '/usr/local/share/ca-certificates/'])
+      
+      pkexec.on('close', (code) => {
+        try { fs.unlinkSync(tempFile) } catch (e) {}
+        
+        if (code === 0) {
+          // Update certificate store
+          const updateCerts = spawn('pkexec', ['update-ca-certificates'])
+          updateCerts.on('close', (updateCode) => {
+            if (updateCode === 0) {
+              resolve({ success: true, message: '证书导入成功（已自动提权）' })
+            } else {
+              resolve({ success: false, error: '证书导入成功但更新证书存储失败' })
+            }
+          })
+        } else {
+          resolve({ success: false, error: '证书导入失败，权限提升被拒绝或系统不支持' })
+        }
+      })
+      
+      pkexec.on('error', (error) => {
+        try { fs.unlinkSync(tempFile) } catch (e) {}
+        resolve({ success: false, error: `权限提升失败: ${error.message}` })
+      })
     }
   })
 }

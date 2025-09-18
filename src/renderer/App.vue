@@ -22,17 +22,22 @@
             刷新证书列表
           </el-button>
           
-          <el-button 
-            type="success" 
-            @click="importAllCertificates"
-            :disabled="!hasUninstalledCerts || installing"
-            :loading="installingAll"
+          <el-tooltip 
+            content="批量导入所有未信任的证书，将自动请求管理员权限"
+            placement="top"
           >
-            <template #icon>
-              <Download />
-            </template>
-            一键导入全部 ({{ uninstalledCount }})
-          </el-button>
+            <el-button 
+              type="success" 
+              @click="importAllCertificates"
+              :disabled="!hasUninstalledCerts || installing"
+              :loading="installingAll"
+            >
+              <template #icon>
+                <Download />
+              </template>
+              一键导入全部 ({{ uninstalledCount }})
+            </el-button>
+          </el-tooltip>
         </div>
 
         <el-card class="certificate-list" v-loading="loading">
@@ -95,15 +100,23 @@
 
                   <template #footer>
                     <div class="certificate-actions">
-                      <el-button 
+                      <el-tooltip 
                         v-if="!cert.isInstalled"
-                        type="primary" 
-                        size="small"
-                        :loading="cert.installing"
-                        @click="installCertificate(cert)"
+                        content="点击导入证书到系统信任区，将自动请求管理员权限"
+                        placement="top"
                       >
-                        导入证书
-                      </el-button>
+                        <el-button 
+                          type="primary" 
+                          size="small"
+                          :loading="cert.installing"
+                          @click="installCertificate(cert)"
+                        >
+                          <template #icon>
+                            <Lock v-if="!cert.installing" />
+                          </template>
+                          导入证书
+                        </el-button>
+                      </el-tooltip>
                       <el-button 
                         v-else
                         type="success" 
@@ -122,7 +135,13 @@
       </el-main>
 
       <el-footer class="app-footer">
-        <p>&copy; 2024 Certificate Import Assistant - 跨平台证书导入工具</p>
+        <div class="footer-content">
+          <p>&copy; 2024 Certificate Import Assistant - 跨平台证书导入工具</p>
+          <p class="privilege-notice">
+            <el-icon><Lock /></el-icon>
+            导入证书时将自动请求系统管理员权限
+          </p>
+        </div>
       </el-footer>
     </el-container>
 
@@ -235,18 +254,32 @@ export default {
 
     const installCertificate = async (cert) => {
       try {
+        // Show confirmation dialog with privilege escalation notice
+        await ElMessageBox.confirm(
+          `确定要导入证书 "${cert.filename}" 吗？\n\n导入过程将自动请求系统管理员权限，请在弹出的权限提升对话框中点击"是"或输入管理员密码。`,
+          '确认导入证书',
+          {
+            confirmButtonText: '确定导入',
+            cancelButtonText: '取消',
+            type: 'warning',
+            showCancelButton: true
+          }
+        )
+        
         cert.installing = true
         const result = await window.electronAPI.installCertificate(cert.content)
         
         if (result.success) {
-          ElMessage.success(`证书 "${cert.filename}" 导入成功`)
+          ElMessage.success(result.message)
           cert.isInstalled = true
         } else {
-          ElMessage.error(`证书 "${cert.filename}" 导入失败: ${result.error}`)
+          ElMessage.error(result.error)
         }
       } catch (error) {
-        console.error('Error installing certificate:', error)
-        ElMessage.error('导入证书时发生错误: ' + error.message)
+        if (error !== 'cancel') {
+          console.error('Error installing certificate:', error)
+          ElMessage.error('导入证书时发生错误: ' + error.message)
+        }
       } finally {
         cert.installing = false
       }
@@ -262,10 +295,10 @@ export default {
 
       try {
         await ElMessageBox.confirm(
-          `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？`,
-          '确认导入',
+          `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？\n\n导入过程将自动请求系统管理员权限，请在弹出的权限提升对话框中点击"是"或输入管理员密码。`,
+          '确认批量导入',
           {
-            confirmButtonText: '确定',
+            confirmButtonText: '确定导入',
             cancelButtonText: '取消',
             type: 'warning'
           }
@@ -449,6 +482,22 @@ export default {
   text-align: center;
   padding: 15px;
   border-top: 1px solid #e9ecef;
+}
+
+.footer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.privilege-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #409eff;
+  font-size: 12px;
+  margin: 0;
 }
 
 .import-results {
