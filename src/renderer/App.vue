@@ -65,7 +65,7 @@
                 <el-card class="certificate-card" :class="{ 'installed': cert.isInstalled }">
                   <template #header>
                     <div class="certificate-header">
-                      <div class="certificate-name">{{ cert.info.name }}</div>
+                      <div class="certificate-name">{{ cert.info.commonName }}</div>
                       <el-tag 
                         :type="cert.isInstalled ? 'success' : 'warning'"
                         size="small"
@@ -79,14 +79,6 @@
                     <div class="detail-row">
                       <span class="label">文件名:</span>
                       <span class="value">{{ cert.filename }}</span>
-                    </div>
-                    <div class="detail-row">
-                      <span class="label">主题:</span>
-                      <span class="value" :title="cert.info.subject">{{ cert.info.subject }}</span>
-                    </div>
-                    <div class="detail-row">
-                      <span class="label">颁发者:</span>
-                      <span class="value" :title="cert.info.issuer">{{ cert.info.issuer }}</span>
                     </div>
                     <div class="detail-row">
                       <span class="label">有效期:</span>
@@ -231,6 +223,7 @@ export default {
               content: '-----BEGIN CERTIFICATE-----\nMIIGIDCC...',
               info: {
                 name: 'zhkf-ca',
+                commonName: 'ZHKF-DEV-DOMAIN-CA',
                 subject: 'CN=ZHKF-DEV-DOMAIN-CA, OU=ZHKF-DEV-TEAM, O=Kdgc, L=Zhengzhou, ST=Henan, C=CN',
                 issuer: 'CN=ZHKF-DEV-Root-CA, OU=ZHKF-DEV-TEAM, O=Kdgc, L=Zhengzhou, ST=Henan, C=CN',
                 validFrom: '2025-08-05',

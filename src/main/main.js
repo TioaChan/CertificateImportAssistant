@@ -118,9 +118,14 @@ async function parseCertificate(content, filename) {
     // Use node-forge to parse the certificate
     const cert = forge.pki.certificateFromPem(content)
     
+    // Extract Common Name from subject
+    const cnAttribute = cert.subject.attributes.find(attr => attr.shortName === 'CN')
+    const commonName = cnAttribute ? cnAttribute.value : filename.replace(/\.(pem|crt|cert)$/, '')
+    
     // Extract certificate information
     return {
       name: filename.replace(/\.(pem|crt|cert)$/, ''),
+      commonName: commonName,
       subject: cert.subject.attributes.map(attr => `${attr.shortName}=${attr.value}`).join(', '),
       issuer: cert.issuer.attributes.map(attr => `${attr.shortName}=${attr.value}`).join(', '),
       validFrom: cert.validity.notBefore.toISOString().split('T')[0],
@@ -133,6 +138,7 @@ async function parseCertificate(content, filename) {
     // Fallback to basic info if parsing fails
     return {
       name: filename.replace(/\.(pem|crt|cert)$/, ''),
+      commonName: filename.replace(/\.(pem|crt|cert)$/, ''),
       subject: 'Certificate parsing failed',
       issuer: 'Unknown',
       validFrom: 'Unknown',
