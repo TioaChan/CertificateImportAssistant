@@ -3,6 +3,7 @@ const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const os = require('os')
+const forge = require('node-forge')
 
 let mainWindow
 
@@ -67,7 +68,7 @@ ipcMain.handle('get-certificates', async () => {
         
         // Parse certificate info
         const certInfo = await parseCertificate(content, file)
-        const isInstalled = await checkCertificateInstalled(content)
+        const isInstalled = await checkCertificateInstalled(content, certInfo)
         
         certificates.push({
           filename: file,
@@ -114,37 +115,40 @@ ipcMain.handle('install-all-certificates', async (event, certificates) => {
 
 async function parseCertificate(content, filename) {
   try {
-    // Basic certificate info parsing - in a real app you'd use a proper cert parser
-    const lines = content.split('\n')
-    const certData = lines.slice(1, -2).join('')
+    // Use node-forge to parse the certificate
+    const cert = forge.pki.certificateFromPem(content)
     
-    // For demonstration, we'll extract some basic info from the filename and content
+    // Extract certificate information
     return {
       name: filename.replace(/\.(pem|crt|cert)$/, ''),
-      subject: 'Certificate Subject', // Would need proper parsing
-      issuer: 'Certificate Issuer',   // Would need proper parsing
-      validFrom: 'Start Date',        // Would need proper parsing
-      validTo: 'End Date',            // Would need proper parsing
-      serialNumber: 'Serial Number'  // Would need proper parsing
+      subject: cert.subject.attributes.map(attr => `${attr.shortName}=${attr.value}`).join(', '),
+      issuer: cert.issuer.attributes.map(attr => `${attr.shortName}=${attr.value}`).join(', '),
+      validFrom: cert.validity.notBefore.toISOString().split('T')[0],
+      validTo: cert.validity.notAfter.toISOString().split('T')[0],
+      serialNumber: cert.serialNumber,
+      fingerprint: forge.md.sha1.create().update(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes()).digest().toHex().toUpperCase().match(/.{2}/g).join(':')
     }
   } catch (error) {
+    console.error('Error parsing certificate:', error)
+    // Fallback to basic info if parsing fails
     return {
-      name: filename,
-      subject: 'Unknown',
+      name: filename.replace(/\.(pem|crt|cert)$/, ''),
+      subject: 'Certificate parsing failed',
       issuer: 'Unknown',
       validFrom: 'Unknown',
       validTo: 'Unknown',
-      serialNumber: 'Unknown'
+      serialNumber: 'Unknown',
+      fingerprint: 'Unknown'
     }
   }
 }
 
-async function checkCertificateInstalled(certificateContent) {
+async function checkCertificateInstalled(certificateContent, certInfo) {
   return new Promise((resolve) => {
     const platform = os.platform()
     
     if (platform === 'win32') {
-      // Windows - use certlm.msc or powershell
+      // Windows - use PowerShell to check certificate by thumbprint
       const tempFile = path.join(os.tmpdir(), `temp_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
@@ -159,29 +163,34 @@ async function checkCertificateInstalled(certificateContent) {
       })
       
       powershell.on('close', (code) => {
-        fs.unlinkSync(tempFile)
+        try { fs.unlinkSync(tempFile) } catch (e) {}
         resolve(output.trim() === 'true')
       })
       
       powershell.on('error', () => {
-        fs.unlinkSync(tempFile)
+        try { fs.unlinkSync(tempFile) } catch (e) {}
         resolve(false)
       })
       
     } else if (platform === 'darwin') {
-      // macOS - use security command
+      // macOS - use security command to find certificate
       const tempFile = path.join(os.tmpdir(), `temp_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
-      const security = spawn('security', ['find-certificate', '-a', '-c', tempFile, '/System/Library/Keychains/SystemRootCertificates.keychain'])
+      // Check if certificate exists in system keychain
+      const security = spawn('security', [
+        'find-certificate', 
+        '-c', certInfo.subject.split(',')[0].replace('CN=', ''), 
+        '/Library/Keychains/System.keychain'
+      ])
       
       security.on('close', (code) => {
-        fs.unlinkSync(tempFile)
+        try { fs.unlinkSync(tempFile) } catch (e) {}
         resolve(code === 0)
       })
       
       security.on('error', () => {
-        fs.unlinkSync(tempFile)
+        try { fs.unlinkSync(tempFile) } catch (e) {}
         resolve(false)
       })
       

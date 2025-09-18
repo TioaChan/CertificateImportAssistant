@@ -13,20 +13,24 @@
         <div class="toolbar">
           <el-button 
             type="primary" 
-            :icon="Refresh" 
             @click="loadCertificates"
             :loading="loading"
           >
+            <template #icon>
+              <Refresh />
+            </template>
             刷新证书列表
           </el-button>
           
           <el-button 
             type="success" 
-            :icon="Download" 
             @click="importAllCertificates"
             :disabled="!hasUninstalledCerts || installing"
             :loading="installingAll"
           >
+            <template #icon>
+              <Download />
+            </template>
             一键导入全部 ({{ uninstalledCount }})
           </el-button>
         </div>
@@ -73,11 +77,19 @@
                     </div>
                     <div class="detail-row">
                       <span class="label">主题:</span>
-                      <span class="value">{{ cert.info.subject }}</span>
+                      <span class="value" :title="cert.info.subject">{{ cert.info.subject }}</span>
                     </div>
                     <div class="detail-row">
                       <span class="label">颁发者:</span>
-                      <span class="value">{{ cert.info.issuer }}</span>
+                      <span class="value" :title="cert.info.issuer">{{ cert.info.issuer }}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="label">有效期:</span>
+                      <span class="value">{{ cert.info.validFrom }} ~ {{ cert.info.validTo }}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="label">指纹:</span>
+                      <span class="value fingerprint" :title="cert.info.fingerprint">{{ cert.info.fingerprint }}</span>
                     </div>
                   </div>
 
@@ -193,7 +205,25 @@ export default {
           })
           ElMessage.success(`已加载 ${certificates.value.length} 个证书`)
         } else {
-          ElMessage.error('无法访问Electron API')
+          // Demo data for browser testing
+          certificates.value = [
+            {
+              filename: 'zhkf-ca.cert.pem',
+              content: '-----BEGIN CERTIFICATE-----\nMIIGIDCC...',
+              info: {
+                name: 'zhkf-ca',
+                subject: 'CN=ZHKF-DEV-DOMAIN-CA, OU=ZHKF-DEV-TEAM, O=Kdgc, L=Zhengzhou, ST=Henan, C=CN',
+                issuer: 'CN=ZHKF-DEV-Root-CA, OU=ZHKF-DEV-TEAM, O=Kdgc, L=Zhengzhou, ST=Henan, C=CN',
+                validFrom: '2025-08-05',
+                validTo: '2035-08-03',
+                serialNumber: '4096',
+                fingerprint: 'A1:B2:C3:D4:E5:F6:07:08:09:0A:1B:2C:3D:4E:5F:60:71:82:93:A4'
+              },
+              isInstalled: false,
+              installing: false
+            }
+          ]
+          ElMessage.warning('运行在浏览器模式，显示演示数据')
         }
       } catch (error) {
         console.error('Error loading certificates:', error)
@@ -401,6 +431,11 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+.fingerprint {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
 }
 
 .certificate-actions {
