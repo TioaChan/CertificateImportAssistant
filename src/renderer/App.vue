@@ -208,6 +208,9 @@ export default {
     const loadCertificates = async () => {
       loading.value = true
       try {
+        console.log('Checking electronAPI availability:', !!window.electronAPI)
+        console.log('electronAPI methods:', window.electronAPI ? Object.keys(window.electronAPI) : 'undefined')
+        
         if (window.electronAPI) {
           certificates.value = await window.electronAPI.getCertificates()
           // Reset installing state for all certificates
