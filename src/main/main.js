@@ -158,27 +158,70 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
     const platform = os.platform()
     
     if (platform === 'win32') {
-      // Windows - use PowerShell to check certificate by thumbprint
+      // Windows - use PowerShell to check certificate by thumbprint (improved)
       const tempFile = path.join(os.tmpdir(), `temp_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
+      const powershellCommand = `
+        try {
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("${tempFile.replace(/\\/g, '\\\\')}")
+          $store = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+          $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+          $found = $store.Certificates | Where-Object { $_.Thumbprint -eq $cert.Thumbprint }
+          if ($found) { 
+            Write-Output "FOUND" 
+          } else { 
+            Write-Output "NOT_FOUND" 
+          }
+          $store.Close()
+        } catch {
+          Write-Output "ERROR: $($_.Exception.Message)"
+        } finally {
+          if (Test-Path "${tempFile.replace(/\\/g, '\\\\')}") {
+            Remove-Item "${tempFile.replace(/\\/g, '\\\\')}" -Force -ErrorAction SilentlyContinue
+          }
+        }
+      `
+      
       const powershell = spawn('powershell', [
-        '-Command',
-        `$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("${tempFile}"); $store = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine); $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly); $found = $store.Certificates | Where-Object { $_.Thumbprint -eq $cert.Thumbprint }; if ($found) { Write-Output "true" } else { Write-Output "false" }; $store.Close()`
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden',
+        '-Command', powershellCommand
       ])
       
       let output = ''
+      let errorOutput = ''
+      
       powershell.stdout.on('data', (data) => {
         output += data.toString()
       })
       
-      powershell.on('close', (code) => {
-        try { fs.unlinkSync(tempFile) } catch (e) {}
-        resolve(output.trim() === 'true')
+      powershell.stderr.on('data', (data) => {
+        errorOutput += data.toString()
       })
       
-      powershell.on('error', () => {
-        try { fs.unlinkSync(tempFile) } catch (e) {}
+      powershell.on('close', (code) => {
+        try { 
+          if (fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile) 
+          }
+        } catch (e) {}
+        
+        console.log('Certificate check output:', output.trim())
+        if (errorOutput) {
+          console.log('Certificate check error:', errorOutput.trim())
+        }
+        
+        resolve(output.trim().includes('FOUND'))
+      })
+      
+      powershell.on('error', (error) => {
+        try { 
+          if (fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile) 
+          }
+        } catch (e) {}
+        console.error('Certificate check error:', error)
         resolve(false)
       })
       
@@ -216,66 +259,138 @@ async function installCertificate(certificateContent) {
     const platform = os.platform()
     
     if (platform === 'win32') {
-      // Windows - use PowerShell with UAC elevation
+      // Windows - use certutil command with UAC elevation (more reliable)
       const tempFile = path.join(os.tmpdir(), `install_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
-      // Create a PowerShell script that requests elevation
-      const scriptContent = `
-$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("${tempFile}")
-$store = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
-try {
-  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-  $store.Add($cert)
-  $store.Close()
-  Write-Output "SUCCESS: Certificate installed successfully"
-} catch {
-  Write-Output "ERROR: $($_.Exception.Message)"
-}
-Remove-Item "${tempFile}" -Force -ErrorAction SilentlyContinue
-`
+      // First, try the simpler certutil approach
+      const certutilCommand = `certutil -addstore -f "Root" "${tempFile}"`
       
-      const scriptFile = path.join(os.tmpdir(), `install_cert_${Date.now()}.ps1`)
-      fs.writeFileSync(scriptFile, scriptContent)
-      
-      // Execute PowerShell with elevation request
+      // Execute certutil with elevation using PowerShell
       const powershell = spawn('powershell', [
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden', 
         '-Command',
-        `Start-Process PowerShell -ArgumentList "-ExecutionPolicy Bypass -File \\"${scriptFile}\\"" -Verb RunAs -Wait -WindowStyle Hidden; Get-Content "${scriptFile}.log" -ErrorAction SilentlyContinue`
-      ], { shell: true })
+        `Start-Process -FilePath 'cmd' -ArgumentList '/c','${certutilCommand}' -Verb RunAs -Wait -PassThru | Select-Object ExitCode`
+      ], { 
+        shell: true,
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
       
       let output = ''
+      let errorOutput = ''
+      
       powershell.stdout.on('data', (data) => {
         output += data.toString()
       })
       
       powershell.stderr.on('data', (data) => {
-        output += data.toString()
+        errorOutput += data.toString()
       })
       
       powershell.on('close', (code) => {
         try { 
-          fs.unlinkSync(tempFile) 
-          fs.unlinkSync(scriptFile)
-        } catch (e) {}
+          if (fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile)
+          }
+        } catch (e) {
+          console.error('Error cleaning up temp file:', e)
+        }
         
-        if (output.includes('SUCCESS:') || code === 0) {
+        console.log('Certutil output:', output)
+        console.log('Certutil error output:', errorOutput)
+        console.log('Certutil exit code:', code)
+        
+        // Check if the process was successful
+        if (code === 0 || output.includes('ExitCode') && !errorOutput.includes('error')) {
           resolve({ success: true, message: '证书导入成功（已自动提权）' })
-        } else if (output.includes('ERROR:')) {
-          const errorMsg = output.split('ERROR:')[1]?.trim() || 'Unknown error'
-          resolve({ success: false, error: `证书导入失败: ${errorMsg}` })
+        } else if (errorOutput.includes('cancelled') || errorOutput.includes('用户取消')) {
+          resolve({ success: false, error: '用户取消了权限提升请求' })
         } else {
-          resolve({ success: false, error: '证书导入失败，可能用户取消了权限提升或系统不支持' })
+          // Fallback to PowerShell X509 approach
+          fallbackToPowerShellInstall()
         }
       })
       
       powershell.on('error', (error) => {
         try { 
-          fs.unlinkSync(tempFile) 
-          fs.unlinkSync(scriptFile)
+          if (fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile)
+          }
         } catch (e) {}
+        console.error('Certutil spawn error:', error)
         resolve({ success: false, error: `权限提升失败: ${error.message}` })
       })
+      
+      // Fallback function using PowerShell X509 API
+      function fallbackToPowerShellInstall() {
+        console.log('Falling back to PowerShell X509 API approach')
+        
+        const tempFile2 = path.join(os.tmpdir(), `install_cert_fallback_${Date.now()}.pem`)
+        fs.writeFileSync(tempFile2, certificateContent)
+        
+        const powershellCommand = `
+          try {
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("${tempFile2.replace(/\\/g, '\\\\')}")
+            $store = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            $store.Add($cert)
+            $store.Close()
+            Write-Output "SUCCESS"
+          } catch {
+            Write-Output "ERROR: $($_.Exception.Message)"
+          } finally {
+            if (Test-Path "${tempFile2.replace(/\\/g, '\\\\')}") {
+              Remove-Item "${tempFile2.replace(/\\/g, '\\\\')}" -Force -ErrorAction SilentlyContinue
+            }
+          }
+        `
+        
+        const fallbackPs = spawn('powershell', [
+          '-ExecutionPolicy', 'Bypass',
+          '-WindowStyle', 'Hidden',
+          '-Command',
+          `Start-Process -FilePath 'powershell' -ArgumentList '-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-Command','${powershellCommand.replace(/'/g, "''").replace(/"/g, '\\"')}' -Verb RunAs -Wait`
+        ], { shell: true })
+        
+        let fallbackOutput = ''
+        let fallbackError = ''
+        
+        fallbackPs.stdout.on('data', (data) => {
+          fallbackOutput += data.toString()
+        })
+        
+        fallbackPs.stderr.on('data', (data) => {
+          fallbackError += data.toString()
+        })
+        
+        fallbackPs.on('close', (fbCode) => {
+          try { 
+            if (fs.existsSync(tempFile2)) {
+              fs.unlinkSync(tempFile2)
+            }
+          } catch (e) {}
+          
+          console.log('Fallback PowerShell output:', fallbackOutput)
+          console.log('Fallback PowerShell error:', fallbackError)
+          
+          if (fallbackOutput.includes('SUCCESS') || fbCode === 0) {
+            resolve({ success: true, message: '证书导入成功（已自动提权）' })
+          } else {
+            const errorMsg = fallbackError || fallbackOutput || '未知错误'
+            resolve({ success: false, error: `证书导入失败: ${errorMsg}` })
+          }
+        })
+        
+        fallbackPs.on('error', (fbError) => {
+          try { 
+            if (fs.existsSync(tempFile2)) {
+              fs.unlinkSync(tempFile2)
+            }
+          } catch (e) {}
+          resolve({ success: false, error: `备用方案失败: ${fbError.message}` })
+        })
+      }
       
     } else if (platform === 'darwin') {
       // macOS - use osascript for privilege escalation with security command
