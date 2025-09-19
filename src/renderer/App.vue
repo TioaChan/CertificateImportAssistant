@@ -13,7 +13,7 @@
         <div class="toolbar">
           <el-button 
             type="primary" 
-            @click="loadCertificates"
+            @click="refreshCertificateStatus"
             :loading="loading"
           >
             <template #icon>
@@ -248,6 +248,33 @@ export default {
       }
     }
 
+    const refreshCertificateStatus = async () => {
+      if (!window.electronAPI || !certificates.value.length) {
+        await loadCertificates()
+        return
+      }
+
+      loading.value = true
+      try {
+        console.log('Refreshing certificate trust status...')
+        const refreshedCertificates = await window.electronAPI.refreshCertificateStatus(certificates.value)
+        certificates.value = refreshedCertificates
+        
+        const installedCount = refreshedCertificates.filter(cert => cert.isInstalled).length
+        const uninstalledCount = refreshedCertificates.length - installedCount
+        
+        ElMessage.success(`证书状态已刷新：${installedCount} 个已信任，${uninstalledCount} 个未信任`)
+        console.log('Certificate status refreshed successfully')
+      } catch (error) {
+        console.error('Error refreshing certificate status:', error)
+        ElMessage.error('刷新证书状态失败: ' + error.message)
+        // Fallback to full reload if refresh fails
+        await loadCertificates()
+      } finally {
+        loading.value = false
+      }
+    }
+
     const installCertificate = async (cert) => {
       try {
         // Show confirmation dialog with privilege escalation notice
@@ -333,7 +360,7 @@ export default {
 
     const refreshAfterImport = () => {
       closeResultDialog()
-      loadCertificates()
+      refreshCertificateStatus()
     }
 
     onMounted(() => {
@@ -350,6 +377,7 @@ export default {
       hasUninstalledCerts,
       uninstalledCount,
       loadCertificates,
+      refreshCertificateStatus,
       installCertificate,
       importAllCertificates,
       closeResultDialog,

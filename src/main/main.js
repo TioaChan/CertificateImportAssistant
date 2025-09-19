@@ -101,6 +101,28 @@ ipcMain.handle('install-certificate', async (event, certificateContent) => {
   }
 })
 
+ipcMain.handle('refresh-certificate-status', async (event, certificates) => {
+  try {
+    console.log('Refreshing certificate status for', certificates.length, 'certificates')
+    const refreshedCertificates = []
+    
+    for (const cert of certificates) {
+      const isInstalled = await checkCertificateInstalled(cert.content, cert.info)
+      console.log(`Certificate ${cert.filename}: ${isInstalled ? 'INSTALLED' : 'NOT_INSTALLED'}`)
+      
+      refreshedCertificates.push({
+        ...cert,
+        isInstalled: isInstalled
+      })
+    }
+    
+    return refreshedCertificates
+  } catch (error) {
+    console.error('Error refreshing certificate status:', error)
+    return certificates // Return original certificates if refresh fails
+  }
+})
+
 ipcMain.handle('install-all-certificates', async (event, certificates) => {
   try {
     const results = []
@@ -158,23 +180,52 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
     const platform = os.platform()
     
     if (platform === 'win32') {
-      // Windows - use PowerShell to check certificate by thumbprint (improved)
+      // Windows - use enhanced PowerShell to check certificate by thumbprint
       const tempFile = path.join(os.tmpdir(), `temp_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
       const powershellCommand = `
         try {
           $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("${tempFile.replace(/\\/g, '\\\\')}")
-          $store = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
-          $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
-          $found = $store.Certificates | Where-Object { $_.Thumbprint -eq $cert.Thumbprint }
-          if ($found) { 
-            Write-Output "FOUND" 
-          } else { 
-            Write-Output "NOT_FOUND" 
+          $thumbprint = $cert.Thumbprint
+          Write-Host "Checking certificate with thumbprint: $thumbprint"
+          
+          # Check LocalMachine Root store
+          $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+          $rootStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+          
+          $foundInRoot = $null
+          foreach ($storeCert in $rootStore.Certificates) {
+            if ($storeCert.Thumbprint -eq $thumbprint) {
+              $foundInRoot = $storeCert
+              break
+            }
           }
-          $store.Close()
+          $rootStore.Close()
+          
+          # Also check CurrentUser Root store for completeness
+          $userStore = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+          $userStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+          
+          $foundInUser = $null
+          foreach ($storeCert in $userStore.Certificates) {
+            if ($storeCert.Thumbprint -eq $thumbprint) {
+              $foundInUser = $storeCert
+              break
+            }
+          }
+          $userStore.Close()
+          
+          if ($foundInRoot -or $foundInUser) {
+            if ($foundInRoot) { Write-Host "Found in LocalMachine Root store" }
+            if ($foundInUser) { Write-Host "Found in CurrentUser Root store" }
+            Write-Output "FOUND"
+          } else {
+            Write-Host "Not found in any Root store"
+            Write-Output "NOT_FOUND"
+          }
         } catch {
+          Write-Host "Error during certificate check: $($_.Exception.Message)"
           Write-Output "ERROR: $($_.Exception.Message)"
         } finally {
           if (Test-Path "${tempFile.replace(/\\/g, '\\\\')}") {
@@ -187,7 +238,9 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
         '-ExecutionPolicy', 'Bypass',
         '-WindowStyle', 'Hidden',
         '-Command', powershellCommand
-      ])
+      ], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
       
       let output = ''
       let errorOutput = ''
@@ -211,8 +264,12 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
         if (errorOutput) {
           console.log('Certificate check error:', errorOutput.trim())
         }
+        console.log('Certificate check exit code:', code)
         
-        resolve(output.trim().includes('FOUND'))
+        // Check if certificate was found
+        const isFound = output.trim().includes('FOUND')
+        console.log('Certificate check result:', isFound ? 'INSTALLED' : 'NOT_INSTALLED')
+        resolve(isFound)
       })
       
       powershell.on('error', (error) => {
@@ -221,7 +278,7 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
             fs.unlinkSync(tempFile) 
           }
         } catch (e) {}
-        console.error('Certificate check error:', error)
+        console.error('Certificate check PowerShell error:', error)
         resolve(false)
       })
       
