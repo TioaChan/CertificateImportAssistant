@@ -257,7 +257,26 @@ export default {
       loading.value = true
       try {
         console.log('Refreshing certificate trust status...')
-        const refreshedCertificates = await window.electronAPI.refreshCertificateStatus(certificates.value)
+        
+        // Create serializable certificate objects without Vue reactivity
+        const serializableCertificates = certificates.value.map(cert => ({
+          filename: cert.filename,
+          content: cert.content,
+          info: {
+            name: cert.info.name,
+            commonName: cert.info.commonName,
+            subject: cert.info.subject,
+            issuer: cert.info.issuer,
+            validFrom: cert.info.validFrom,
+            validTo: cert.info.validTo,
+            serialNumber: cert.info.serialNumber,
+            fingerprint: cert.info.fingerprint
+          },
+          isInstalled: cert.isInstalled,
+          installing: false
+        }))
+        
+        const refreshedCertificates = await window.electronAPI.refreshCertificateStatus(serializableCertificates)
         certificates.value = refreshedCertificates
         
         const installedCount = refreshedCertificates.filter(cert => cert.isInstalled).length

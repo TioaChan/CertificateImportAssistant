@@ -107,19 +107,43 @@ ipcMain.handle('refresh-certificate-status', async (event, certificates) => {
     const refreshedCertificates = []
     
     for (const cert of certificates) {
-      const isInstalled = await checkCertificateInstalled(cert.content, cert.info)
-      console.log(`Certificate ${cert.filename}: ${isInstalled ? 'INSTALLED' : 'NOT_INSTALLED'}`)
-      
-      refreshedCertificates.push({
-        ...cert,
-        isInstalled: isInstalled
-      })
+      try {
+        const isInstalled = await checkCertificateInstalled(cert.content, cert.info)
+        console.log(`Certificate ${cert.filename}: ${isInstalled ? 'INSTALLED' : 'NOT_INSTALLED'}`)
+        
+        // Return a clean, serializable object
+        refreshedCertificates.push({
+          filename: cert.filename,
+          content: cert.content,
+          info: cert.info,
+          isInstalled: isInstalled,
+          installing: false
+        })
+      } catch (certError) {
+        console.error(`Error checking certificate ${cert.filename}:`, certError)
+        // Include the certificate with error status
+        refreshedCertificates.push({
+          filename: cert.filename,
+          content: cert.content,
+          info: cert.info,
+          isInstalled: false, // Default to false on error
+          installing: false
+        })
+      }
     }
     
+    console.log('Certificate status refresh completed')
     return refreshedCertificates
   } catch (error) {
     console.error('Error refreshing certificate status:', error)
-    return certificates // Return original certificates if refresh fails
+    // Return original certificates on error to prevent data loss
+    return certificates.map(cert => ({
+      filename: cert.filename,
+      content: cert.content,
+      info: cert.info,
+      isInstalled: cert.isInstalled || false,
+      installing: false
+    }))
   }
 })
 
