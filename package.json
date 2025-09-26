@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build:electron": "vite build && electron-builder",
-    "build:win": "vite build && electron-builder --win",
+    "build:win": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
     "build:mac": "vite build && electron-builder --mac",
     "format": "prettier --write src/"
   },
@@ -44,6 +44,9 @@
     "productName": "Certificate Import Assistant",
     "directories": {
       "output": "dist"
+    },
+    "nsis": {
+      "oneClick": false
     },
     "files": [
       "src/main/**/*",
