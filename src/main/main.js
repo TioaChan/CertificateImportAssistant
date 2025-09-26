@@ -301,19 +301,20 @@ async function installCertificate(certificateContent) {
     const platform = os.platform()
     
     if (platform === 'win32') {
-      // Windows - use certutil command with UAC elevation (more reliable)
+      // Windows - use certutil command with UAC elevation
       const tempFile = path.join(os.tmpdir(), `install_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
-      // First, try the simpler certutil approach
-      const certutilCommand = `certutil -addstore -f "Root" "${tempFile}"`
+      console.log('=== Windows Certificate Installation using certutil ===')
+      console.log('Installing certificate:', tempFile)
       
-      // Execute certutil with elevation using PowerShell
+      // Use certutil with UAC elevation
       const powershell = spawn('powershell', [
         '-ExecutionPolicy', 'Bypass',
-        '-WindowStyle', 'Hidden', 
+        '-NoProfile',
+        '-WindowStyle', 'Hidden',
         '-Command',
-        `Start-Process -FilePath 'cmd' -ArgumentList '/c','${certutilCommand}' -Verb RunAs -Wait -PassThru | Select-Object ExitCode`
+        `Start-Process -FilePath 'certutil' -ArgumentList '-addstore','-f','Root','${tempFile}' -Verb RunAs -Wait -PassThru | Select-Object ExitCode`
       ], { 
         shell: true,
         stdio: ['pipe', 'pipe', 'pipe']
@@ -339,19 +340,48 @@ async function installCertificate(certificateContent) {
           console.error('Error cleaning up temp file:', e)
         }
         
-        console.log('Certutil output:', output)
-        console.log('Certutil error output:', errorOutput)
-        console.log('Certutil exit code:', code)
-        
-        // Check if the process was successful
-        if (code === 0 || output.includes('ExitCode') && !errorOutput.includes('error')) {
-          resolve({ success: true, message: '证书导入成功（已自动提权）' })
-        } else if (errorOutput.includes('cancelled') || errorOutput.includes('用户取消')) {
-          resolve({ success: false, error: '用户取消了权限提升请求' })
-        } else {
-          // Fallback to PowerShell X509 approach
-          fallbackToPowerShellInstall()
+        console.log('=== Certificate Installation Results ===')
+        console.log('PowerShell exit code:', code)
+        console.log('Output:', output.trim())
+        if (errorOutput.trim()) {
+          console.log('Error output:', errorOutput.trim())
         }
+        
+        // Parse the output to get the actual certutil exit code
+        let certutilExitCode = null
+        const exitCodeMatch = output.match(/ExitCode\s*:\s*(\d+)/i)
+        if (exitCodeMatch) {
+          certutilExitCode = parseInt(exitCodeMatch[1])
+          console.log('Certutil exit code:', certutilExitCode)
+        }
+        
+        // Determine success based on certutil exit code
+        let success = false
+        let message = ''
+        
+        if (certutilExitCode === 0) {
+          success = true
+          message = '证书导入成功（已自动提权）'
+        } else if (certutilExitCode === null && code === 0) {
+          // Fallback: if we can't parse certutil exit code but PowerShell succeeded
+          success = true
+          message = '证书导入成功'
+        } else if (errorOutput.includes('cancelled') || errorOutput.includes('用户取消') || errorOutput.includes('was cancelled')) {
+          success = false
+          message = '用户取消了权限提升请求'
+        } else {
+          success = false
+          message = `证书导入失败 (certutil exit code: ${certutilExitCode || 'unknown'})`
+        }
+        
+        console.log('Installation result:', success ? 'SUCCESS' : 'FAILED')
+        console.log('========================================')
+        
+        resolve({ 
+          success: success, 
+          error: success ? undefined : message,
+          message: success ? message : undefined
+        })
       })
       
       powershell.on('error', (error) => {
@@ -360,79 +390,9 @@ async function installCertificate(certificateContent) {
             fs.unlinkSync(tempFile)
           }
         } catch (e) {}
-        console.error('Certutil spawn error:', error)
+        console.error('PowerShell spawn error:', error)
         resolve({ success: false, error: `权限提升失败: ${error.message}` })
       })
-      
-      // Fallback function using PowerShell X509 API
-      function fallbackToPowerShellInstall() {
-        console.log('Falling back to PowerShell X509 API approach')
-        
-        const tempFile2 = path.join(os.tmpdir(), `install_cert_fallback_${Date.now()}.pem`)
-        fs.writeFileSync(tempFile2, certificateContent)
-        
-        const powershellCommand = `
-          try {
-            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("${tempFile2.replace(/\\/g, '\\\\')}")
-            $store = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
-            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            $store.Add($cert)
-            $store.Close()
-            Write-Output "SUCCESS"
-          } catch {
-            Write-Output "ERROR: $($_.Exception.Message)"
-          } finally {
-            if (Test-Path "${tempFile2.replace(/\\/g, '\\\\')}") {
-              Remove-Item "${tempFile2.replace(/\\/g, '\\\\')}" -Force -ErrorAction SilentlyContinue
-            }
-          }
-        `
-        
-        const fallbackPs = spawn('powershell', [
-          '-ExecutionPolicy', 'Bypass',
-          '-WindowStyle', 'Hidden',
-          '-Command',
-          `Start-Process -FilePath 'powershell' -ArgumentList '-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-Command','${powershellCommand.replace(/'/g, "''").replace(/"/g, '\\"')}' -Verb RunAs -Wait`
-        ], { shell: true })
-        
-        let fallbackOutput = ''
-        let fallbackError = ''
-        
-        fallbackPs.stdout.on('data', (data) => {
-          fallbackOutput += data.toString()
-        })
-        
-        fallbackPs.stderr.on('data', (data) => {
-          fallbackError += data.toString()
-        })
-        
-        fallbackPs.on('close', (fbCode) => {
-          try { 
-            if (fs.existsSync(tempFile2)) {
-              fs.unlinkSync(tempFile2)
-            }
-          } catch (e) {}
-          
-          console.log('Fallback PowerShell output:', fallbackOutput)
-          console.log('Fallback PowerShell error:', fallbackError)
-          
-          if (fallbackOutput.includes('SUCCESS') || fbCode === 0) {
-            resolve({ success: true, message: '证书导入成功（已自动提权）' })
-          } else {
-            const errorMsg = fallbackError || fallbackOutput || '未知错误'
-            resolve({ success: false, error: `证书导入失败: ${errorMsg}` })
-          }
-        })
-        
-        fallbackPs.on('error', (fbError) => {
-          try { 
-            if (fs.existsSync(tempFile2)) {
-              fs.unlinkSync(tempFile2)
-            }
-          } catch (e) {}
-          resolve({ success: false, error: `备用方案失败: ${fbError.message}` })
-        })
-      }
       
     } else if (platform === 'darwin') {
       // macOS - use osascript for privilege escalation with security command
