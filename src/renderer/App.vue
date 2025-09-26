@@ -2,11 +2,10 @@
     <div class="app-container">
         <el-container>
             <el-header class="app-header">
-                <h1 class="app-title">
+                <div class="app-title">
                     <el-icon><Lock /></el-icon>
                     证书导入助手
-                </h1>
-                <p class="app-subtitle">Certificate Import Assistant</p>
+                </div>
             </el-header>
 
             <el-main class="app-main">
@@ -155,19 +154,6 @@
                     </div>
                 </el-card>
             </el-main>
-
-            <el-footer class="app-footer">
-                <div class="footer-content">
-                    <p>
-                        &copy; 2024 Certificate Import Assistant -
-                        跨平台证书导入工具
-                    </p>
-                    <p class="privilege-notice">
-                        <el-icon><Lock /></el-icon>
-                        导入证书时将自动请求系统管理员权限
-                    </p>
-                </div>
-            </el-footer>
         </el-container>
 
         <!-- 导入结果对话框 -->
@@ -217,9 +203,7 @@
     </div>
 </template>
 
-<script>
-import { ref, computed, onMounted } from "vue";
-import { ElMessage, ElMessageBox, ElIcon } from "element-plus";
+<script setup>
 import {
     Lock,
     Refresh,
@@ -228,272 +212,221 @@ import {
     CircleCloseFilled,
 } from "@element-plus/icons-vue";
 
-export default {
-    name: "App",
-    components: {
-        Lock,
-        Refresh,
-        Download,
-        SuccessFilled,
-        CircleCloseFilled,
-    },
-    setup() {
-        const certificates = ref([]);
-        const loading = ref(false);
-        const installing = ref(false);
-        const installingAll = ref(false);
-        const showResultDialog = ref(false);
-        const importResults = ref([]);
+const certificates = ref([]);
+const loading = ref(false);
+const installing = ref(false);
+const installingAll = ref(false);
+const showResultDialog = ref(false);
+const importResults = ref([]);
 
-        const hasUninstalledCerts = computed(() => {
-            return certificates.value.some((cert) => !cert.isInstalled);
-        });
+const hasUninstalledCerts = computed(() => {
+    return certificates.value.some((cert) => !cert.isInstalled);
+});
 
-        const uninstalledCount = computed(() => {
-            return certificates.value.filter((cert) => !cert.isInstalled)
-                .length;
-        });
+const uninstalledCount = computed(() => {
+    return certificates.value.filter((cert) => !cert.isInstalled).length;
+});
 
-        const loadCertificates = async () => {
-            loading.value = true;
-            try {
-                console.log(
-                    "Checking electronAPI availability:",
-                    !!window.electronAPI
-                );
-                console.log(
-                    "electronAPI methods:",
-                    window.electronAPI
-                        ? Object.keys(window.electronAPI)
-                        : "undefined"
-                );
+const loadCertificates = async () => {
+    loading.value = true;
+    try {
+        console.log("Checking electronAPI availability:", !!window.electronAPI);
+        console.log(
+            "electronAPI methods:",
+            window.electronAPI ? Object.keys(window.electronAPI) : "undefined"
+        );
 
-                if (window.electronAPI) {
-                    certificates.value =
-                        await window.electronAPI.getCertificates();
-                    // Reset installing state for all certificates
-                    certificates.value.forEach((cert) => {
-                        cert.installing = false;
-                    });
-                    ElMessage.success(
-                        `已加载 ${certificates.value.length} 个证书`
-                    );
-                } else {
-                    // Demo data for browser testing
-                    certificates.value = [
-                        {
-                            filename: "zhkf-ca.cert.pem",
-                            content: "-----BEGIN CERTIFICATE-----\nMIIGIDCC...",
-                            info: {
-                                name: "zhkf-ca",
-                                commonName: "ZHKF-DEV-DOMAIN-CA",
-                                subject:
-                                    "CN=ZHKF-DEV-DOMAIN-CA, OU=ZHKF-DEV-TEAM, O=Kdgc, L=Zhengzhou, ST=Henan, C=CN",
-                                issuer: "CN=ZHKF-DEV-Root-CA, OU=ZHKF-DEV-TEAM, O=Kdgc, L=Zhengzhou, ST=Henan, C=CN",
-                                validFrom: "2025-08-05",
-                                validTo: "2035-08-03",
-                                serialNumber: "4096",
-                                fingerprint:
-                                    "A1:B2:C3:D4:E5:F6:07:08:09:0A:1B:2C:3D:4E:5F:60:71:82:93:A4",
-                            },
-                            isInstalled: false,
-                            installing: false,
-                        },
-                    ];
-                    ElMessage.warning("运行在浏览器模式，显示演示数据");
-                }
-            } catch (error) {
-                console.error("Error loading certificates:", error);
-                ElMessage.error("加载证书失败: " + error.message);
-            } finally {
-                loading.value = false;
-            }
-        };
-
-        const refreshCertificateStatus = async () => {
-            if (!window.electronAPI || !certificates.value.length) {
-                await loadCertificates();
-                return;
-            }
-
-            loading.value = true;
-            try {
-                console.log("Refreshing certificate trust status...");
-
-                // Create serializable certificate objects without Vue reactivity
-                const serializableCertificates = certificates.value.map(
-                    (cert) => ({
-                        filename: cert.filename,
-                        content: cert.content,
-                        info: {
-                            name: cert.info.name,
-                            commonName: cert.info.commonName,
-                            subject: cert.info.subject,
-                            issuer: cert.info.issuer,
-                            validFrom: cert.info.validFrom,
-                            validTo: cert.info.validTo,
-                            serialNumber: cert.info.serialNumber,
-                            fingerprint: cert.info.fingerprint,
-                        },
-                        isInstalled: cert.isInstalled,
-                        installing: false,
-                    })
-                );
-
-                const refreshedCertificates =
-                    await window.electronAPI.refreshCertificateStatus(
-                        serializableCertificates
-                    );
-                certificates.value = refreshedCertificates;
-
-                const installedCount = refreshedCertificates.filter(
-                    (cert) => cert.isInstalled
-                ).length;
-                const uninstalledCount =
-                    refreshedCertificates.length - installedCount;
-
-                ElMessage.success(
-                    `证书状态已刷新：${installedCount} 个已信任，${uninstalledCount} 个未信任`
-                );
-                console.log("Certificate status refreshed successfully");
-            } catch (error) {
-                console.error("Error refreshing certificate status:", error);
-                ElMessage.error("刷新证书状态失败: " + error.message);
-                // Fallback to full reload if refresh fails
-                await loadCertificates();
-            } finally {
-                loading.value = false;
-            }
-        };
-
-        const installCertificate = async (cert) => {
-            try {
-                // Show confirmation dialog with privilege escalation notice
-                const isWindows = navigator.platform
-                    .toLowerCase()
-                    .includes("win");
-                const confirmMessage = isWindows
-                    ? `确定要导入证书 "${cert.filename}" 吗？\n\n导入过程将自动请求系统管理员权限。Windows平台使用原生certutil工具进行安全导入，支持自签名证书。\n\n请在弹出的UAC对话框中点击"是"以允许权限提升。`
-                    : `确定要导入证书 "${cert.filename}" 吗？\n\n导入过程将自动请求系统管理员权限，请在弹出的权限提升对话框中点击"是"或输入管理员密码。`;
-
-                await ElMessageBox.confirm(confirmMessage, "确认导入证书", {
-                    confirmButtonText: "确定导入",
-                    cancelButtonText: "取消",
-                    type: "warning",
-                    showCancelButton: true,
-                });
-
-                cert.installing = true;
-                const result = await window.electronAPI.installCertificate(
-                    cert.content
-                );
-
-                if (result.success) {
-                    ElMessage.success(result.message);
-                    cert.isInstalled = true;
-                } else {
-                    ElMessage.error(result.error);
-                }
-            } catch (error) {
-                if (error !== "cancel") {
-                    console.error("Error installing certificate:", error);
-                    ElMessage.error("导入证书时发生错误: " + error.message);
-                }
-            } finally {
+        if (window.electronAPI) {
+            certificates.value = await window.electronAPI.getCertificates();
+            // Reset installing state for all certificates
+            certificates.value.forEach((cert) => {
                 cert.installing = false;
-            }
-        };
+            });
+            ElMessage.success(`已加载 ${certificates.value.length} 个证书`);
+        } else {
+            ElMessage.warning("不支持运行在浏览器模式");
+        }
+    } catch (error) {
+        console.error("Error loading certificates:", error);
+        ElMessage.error("加载证书失败: " + error.message);
+    } finally {
+        loading.value = false;
+    }
+};
 
-        const importAllCertificates = async () => {
-            const uninstalledCerts = certificates.value.filter(
-                (cert) => !cert.isInstalled
+const refreshCertificateStatus = async () => {
+    if (!window.electronAPI || !certificates.value.length) {
+        await loadCertificates();
+        return;
+    }
+
+    loading.value = true;
+    try {
+        console.log("Refreshing certificate trust status...");
+
+        // Create serializable certificate objects without Vue reactivity
+        const serializableCertificates = certificates.value.map((cert) => ({
+            filename: cert.filename,
+            content: cert.content,
+            info: {
+                name: cert.info.name,
+                commonName: cert.info.commonName,
+                subject: cert.info.subject,
+                issuer: cert.info.issuer,
+                validFrom: cert.info.validFrom,
+                validTo: cert.info.validTo,
+                serialNumber: cert.info.serialNumber,
+                fingerprint: cert.info.fingerprint,
+            },
+            isInstalled: cert.isInstalled,
+            installing: false,
+        }));
+
+        const refreshedCertificates =
+            await window.electronAPI.refreshCertificateStatus(
+                serializableCertificates
             );
+        certificates.value = refreshedCertificates;
 
-            if (uninstalledCerts.length === 0) {
-                ElMessage.info("所有证书都已信任");
-                return;
-            }
+        const installedCount = refreshedCertificates.filter(
+            (cert) => cert.isInstalled
+        ).length;
+        const uninstalledCount = refreshedCertificates.length - installedCount;
 
-            try {
-                const isWindows = navigator.platform
-                    .toLowerCase()
-                    .includes("win");
-                const batchConfirmMessage = isWindows
-                    ? `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？\n\n导入过程将自动请求系统管理员权限。Windows平台使用原生certutil工具进行安全导入，支持自签名证书。\n\n请在弹出的UAC对话框中点击"是"以允许权限提升。`
-                    : `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？\n\n导入过程将自动请求系统管理员权限，请在弹出的权限提升对话框中点击"是"或输入管理员密码。`;
+        ElMessage.success(
+            `证书状态已刷新：${installedCount} 个已信任，${uninstalledCount} 个未信任`
+        );
+        console.log("Certificate status refreshed successfully");
+    } catch (error) {
+        console.error("Error refreshing certificate status:", error);
+        ElMessage.error("刷新证书状态失败: " + error.message);
+        // Fallback to full reload if refresh fails
+        await loadCertificates();
+    } finally {
+        loading.value = false;
+    }
+};
 
-                await ElMessageBox.confirm(
-                    batchConfirmMessage,
-                    "确认批量导入",
-                    {
-                        confirmButtonText: "确定导入",
-                        cancelButtonText: "取消",
-                        type: "warning",
-                    }
-                );
+const installCertificate = async (cert) => {
+    try {
+        // Show confirmation dialog with privilege escalation notice
+        const isWindows = navigator.platform.toLowerCase().includes("win");
+        const confirmMessage = isWindows
+            ? `确定要导入证书 "${cert.filename}" 吗？\n\n请在弹出的UAC对话框中点击“是”以授权程序以管理员权限导入证书。`
+            : `确定要导入证书 "${cert.filename}" 吗？\n\n请在弹出的权限提升对话框中授权程序以管理员权限导入证书。`;
 
-                installingAll.value = true;
-                const results =
-                    await window.electronAPI.installAllCertificates(
-                        uninstalledCerts
-                    );
-
-                importResults.value = results;
-                showResultDialog.value = true;
-            } catch (error) {
-                if (error !== "cancel") {
-                    console.error("Error installing certificates:", error);
-                    ElMessage.error("批量导入失败: " + error.message);
-                }
-            } finally {
-                installingAll.value = false;
-            }
-        };
-
-        const closeResultDialog = () => {
-            showResultDialog.value = false;
-            importResults.value = [];
-        };
-
-        const refreshAfterImport = () => {
-            closeResultDialog();
-            refreshCertificateStatus();
-        };
-
-        onMounted(() => {
-            loadCertificates();
+        await ElMessageBox.confirm(confirmMessage, "确认导入证书", {
+            confirmButtonText: "确定导入",
+            cancelButtonText: "取消",
+            type: "warning",
+            showCancelButton: true,
         });
 
-        return {
-            certificates,
-            loading,
-            installing,
-            installingAll,
-            showResultDialog,
-            importResults,
-            hasUninstalledCerts,
-            uninstalledCount,
-            loadCertificates,
-            refreshCertificateStatus,
-            installCertificate,
-            importAllCertificates,
-            closeResultDialog,
-            refreshAfterImport,
-        };
-    },
+        cert.installing = true;
+        const result = await window.electronAPI.installCertificate(
+            cert.content
+        );
+
+        if (result.success) {
+            ElMessage.success(result.message);
+            cert.isInstalled = true;
+        } else {
+            ElMessage.error(result.error);
+        }
+    } catch (error) {
+        if (error !== "cancel") {
+            console.error("Error installing certificate:", error);
+            ElMessage.error("导入证书时发生错误: " + error.message);
+        }
+    } finally {
+        cert.installing = false;
+    }
 };
+
+const importAllCertificates = async () => {
+    const uninstalledCerts = certificates.value.filter(
+        (cert) => !cert.isInstalled
+    );
+
+    if (uninstalledCerts.length === 0) {
+        ElMessage.info("所有证书都已信任");
+        return;
+    }
+
+    try {
+        const isWindows = navigator.platform.toLowerCase().includes("win");
+        const batchConfirmMessage = isWindows
+            ? `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？\n\n请在弹出的UAC对话框中点击“是”以授权程序以管理员权限导入证书。`
+            : `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？\n\n请在弹出的权限提升对话框中授权程序以管理员权限导入证书。`;
+
+        await ElMessageBox.confirm(batchConfirmMessage, "确认批量导入", {
+            confirmButtonText: "确定导入",
+            cancelButtonText: "取消",
+            type: "warning",
+        });
+
+        installingAll.value = true;
+        const results =
+            await window.electronAPI.installAllCertificates(uninstalledCerts);
+
+        importResults.value = results;
+        showResultDialog.value = true;
+    } catch (error) {
+        if (error !== "cancel") {
+            console.error("Error installing certificates:", error);
+            ElMessage.error("批量导入失败: " + error.message);
+        }
+    } finally {
+        installingAll.value = false;
+    }
+};
+
+const closeResultDialog = () => {
+    showResultDialog.value = false;
+    importResults.value = [];
+};
+
+const refreshAfterImport = () => {
+    closeResultDialog();
+    refreshCertificateStatus();
+};
+
+onMounted(() => {
+    loadCertificates();
+});
 </script>
 
+<style>
+#app {
+    font-family: "Avenir", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-align: left;
+    color: #2c3e50;
+    min-height: 100vh;
+}
+html,
+body,
+.el-container {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+}
+</style>
+
 <style scoped>
-.app-container {
+.app-container,
+.el-container {
     min-height: 100vh;
 }
 
 .app-header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
-    text-align: center;
-    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
 }
 
 .app-title {
@@ -605,30 +538,6 @@ export default {
 .certificate-actions {
     display: flex;
     justify-content: center;
-}
-
-.app-footer {
-    background-color: #f8f9fa;
-    color: #6c757d;
-    text-align: center;
-    padding: 15px;
-    border-top: 1px solid #e9ecef;
-}
-
-.footer-content {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.privilege-notice {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    color: #409eff;
-    font-size: 12px;
-    margin: 0;
 }
 
 .import-results {
