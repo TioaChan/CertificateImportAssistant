@@ -204,18 +204,14 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
     const platform = os.platform()
     
     if (platform === 'win32') {
-      // Windows - use certutil to check certificate status
-      const tempFile = path.join(os.tmpdir(), `temp_cert_${Date.now()}.pem`)
-      fs.writeFileSync(tempFile, certificateContent)
-      
+      // Windows - use certutil to check certificate status by comparing fingerprints
       console.log('=== Windows Certificate Check using certutil ===')
-      console.log('Checking certificate:', tempFile)
+      console.log('Checking certificate fingerprint:', certInfo.fingerprint)
       
-      // Use certutil to check if certificate exists in Root store
+      // Use certutil to list all certificates in Root store and search for our fingerprint
       const certutil = spawn('certutil', [
-        '-verifystore', 
-        'Root', 
-        tempFile
+        '-store', 
+        'Root'
       ], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true
@@ -233,23 +229,29 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
       })
       
       certutil.on('close', (code) => {
-        try { 
-          if (fs.existsSync(tempFile)) {
-            fs.unlinkSync(tempFile) 
-          }
-        } catch (e) {
-          console.error('Error cleaning up temp file:', e)
-        }
-        
         console.log('certutil exit code:', code)
-        console.log('certutil output:', output.trim())
         if (errorOutput.trim()) {
           console.log('certutil error output:', errorOutput.trim())
         }
         
-        // certutil returns 0 if certificate is found and valid in the store
-        // Returns non-zero if certificate is not found or invalid
-        const isInstalled = (code === 0)
+        let isInstalled = false
+        
+        if (code === 0) {
+          // Parse the output to find certificate fingerprints
+          // Look for our certificate's fingerprint in the output
+          const fingerprint = certInfo.fingerprint.replace(/:/g, '').toLowerCase()
+          const outputLower = output.toLowerCase().replace(/\s/g, '')
+          
+          // certutil -store output contains "Cert Hash(sha1):" followed by the fingerprint
+          if (outputLower.includes(fingerprint)) {
+            isInstalled = true
+            console.log('Certificate fingerprint found in Root store')
+          } else {
+            console.log('Certificate fingerprint not found in Root store')
+          }
+        } else {
+          console.log('Failed to list Root store certificates')
+        }
         
         console.log('Certificate check result:', isInstalled ? 'CERTIFICATE TRUSTED' : 'CERTIFICATE NOT TRUSTED')
         console.log('===============================================')
@@ -257,11 +259,6 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
       })
       
       certutil.on('error', (error) => {
-        try { 
-          if (fs.existsSync(tempFile)) {
-            fs.unlinkSync(tempFile) 
-          }
-        } catch (e) {}
         console.error('certutil command error:', error)
         console.log('Defaulting to NOT TRUSTED due to certutil error')
         resolve(false)
