@@ -204,116 +204,35 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
     const platform = os.platform()
     
     if (platform === 'win32') {
-      // Windows - use enhanced PowerShell to check certificate by thumbprint
+      // Windows - use certutil to check certificate status
       const tempFile = path.join(os.tmpdir(), `temp_cert_${Date.now()}.pem`)
       fs.writeFileSync(tempFile, certificateContent)
       
-      const powershellCommand = `
-        $ErrorActionPreference = "Stop"
-        try {
-          # Load the certificate from file
-          $certFile = "${tempFile.replace(/\\/g, '\\\\')}"
-          if (-not (Test-Path $certFile)) {
-            Write-Output "ERROR: Certificate file not found: $certFile"
-            exit 1
-          }
-          
-          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certFile)
-          $thumbprint = $cert.Thumbprint
-          Write-Host "Certificate loaded - Thumbprint: $thumbprint"
-          Write-Host "Subject: $($cert.Subject)"
-          
-          # Initialize result
-          $found = $false
-          
-          # Check LocalMachine Root store
-          Write-Host "Checking LocalMachine Root store..."
-          try {
-            $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
-            $rootStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
-            
-            $rootCertCount = $rootStore.Certificates.Count
-            Write-Host "LocalMachine Root store has $rootCertCount certificates"
-            
-            foreach ($storeCert in $rootStore.Certificates) {
-              if ($storeCert.Thumbprint -eq $thumbprint) {
-                Write-Host "MATCH: Found certificate in LocalMachine Root store"
-                $found = $true
-                break
-              }
-            }
-            $rootStore.Close()
-          } catch {
-            Write-Host "Error checking LocalMachine Root store: $($_.Exception.Message)"
-          }
-          
-          # Check CurrentUser Root store
-          Write-Host "Checking CurrentUser Root store..."
-          try {
-            $userStore = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-            $userStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
-            
-            $userCertCount = $userStore.Certificates.Count
-            Write-Host "CurrentUser Root store has $userCertCount certificates"
-            
-            foreach ($storeCert in $userStore.Certificates) {
-              if ($storeCert.Thumbprint -eq $thumbprint) {
-                Write-Host "MATCH: Found certificate in CurrentUser Root store"
-                $found = $true
-                break
-              }
-            }
-            $userStore.Close()
-          } catch {
-            Write-Host "Error checking CurrentUser Root store: $($_.Exception.Message)"
-          }
-          
-          # Return result
-          if ($found) {
-            Write-Host "RESULT: Certificate is TRUSTED"
-            Write-Output "FOUND"
-          } else {
-            Write-Host "RESULT: Certificate is NOT TRUSTED"
-            Write-Output "NOT_FOUND"
-          }
-          
-        } catch {
-          Write-Host "Critical error during certificate check: $($_.Exception.Message)"
-          Write-Host "Error details: $($_.Exception.ToString())"
-          Write-Output "ERROR: $($_.Exception.Message)"
-        } finally {
-          # Cleanup
-          if (Test-Path "${tempFile.replace(/\\/g, '\\\\')}") {
-            try {
-              Remove-Item "${tempFile.replace(/\\/g, '\\\\')}" -Force -ErrorAction SilentlyContinue
-            } catch {
-              Write-Host "Warning: Could not remove temp file: $($_.Exception.Message)"
-            }
-          }
-        }
-      `
+      console.log('=== Windows Certificate Check using certutil ===')
+      console.log('Checking certificate:', tempFile)
       
-      const powershell = spawn('powershell', [
-        '-ExecutionPolicy', 'Bypass',
-        '-NoProfile',
-        '-WindowStyle', 'Hidden',
-        '-Command', powershellCommand
+      // Use certutil to check if certificate exists in Root store
+      const certutil = spawn('certutil', [
+        '-verifystore', 
+        'Root', 
+        tempFile
       ], {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
       })
       
       let output = ''
       let errorOutput = ''
       
-      powershell.stdout.on('data', (data) => {
+      certutil.stdout.on('data', (data) => {
         output += data.toString()
       })
       
-      powershell.stderr.on('data', (data) => {
+      certutil.stderr.on('data', (data) => {
         errorOutput += data.toString()
       })
       
-      powershell.on('close', (code) => {
+      certutil.on('close', (code) => {
         try { 
           if (fs.existsSync(tempFile)) {
             fs.unlinkSync(tempFile) 
@@ -322,39 +241,29 @@ async function checkCertificateInstalled(certificateContent, certInfo) {
           console.error('Error cleaning up temp file:', e)
         }
         
-        console.log('=== Windows Certificate Check Results ===')
-        console.log('Exit code:', code)
-        console.log('Output:', output.trim())
+        console.log('certutil exit code:', code)
+        console.log('certutil output:', output.trim())
         if (errorOutput.trim()) {
-          console.log('Error output:', errorOutput.trim())
-        }
-        console.log('=========================================')
-        
-        // Determine if certificate was found
-        let isFound = false
-        if (output.includes('FOUND')) {
-          isFound = true
-        } else if (output.includes('NOT_FOUND')) {
-          isFound = false
-        } else if (output.includes('ERROR:')) {
-          console.error('PowerShell certificate check failed:', output)
-          isFound = false
-        } else {
-          console.warn('Unexpected PowerShell output format, defaulting to NOT_FOUND')
-          isFound = false
+          console.log('certutil error output:', errorOutput.trim())
         }
         
-        console.log('Final result:', isFound ? 'CERTIFICATE TRUSTED' : 'CERTIFICATE NOT TRUSTED')
-        resolve(isFound)
+        // certutil returns 0 if certificate is found and valid in the store
+        // Returns non-zero if certificate is not found or invalid
+        const isInstalled = (code === 0)
+        
+        console.log('Certificate check result:', isInstalled ? 'CERTIFICATE TRUSTED' : 'CERTIFICATE NOT TRUSTED')
+        console.log('===============================================')
+        resolve(isInstalled)
       })
       
-      powershell.on('error', (error) => {
+      certutil.on('error', (error) => {
         try { 
           if (fs.existsSync(tempFile)) {
             fs.unlinkSync(tempFile) 
           }
         } catch (e) {}
-        console.error('Certificate check PowerShell spawn error:', error)
+        console.error('certutil command error:', error)
+        console.log('Defaulting to NOT TRUSTED due to certutil error')
         resolve(false)
       })
       
