@@ -308,16 +308,21 @@ async function installCertificate(certificateContent) {
       console.log('=== Windows Certificate Installation using certutil ===')
       console.log('Installing certificate:', tempFile)
       
-      // Use certutil with UAC elevation
-      const powershell = spawn('powershell', [
+      // Use certutil with UAC elevation - simplified command for better compatibility
+      // For self-signed certificates, we use -f flag to force installation
+      const powershellCommand = `
+$process = Start-Process -FilePath "certutil.exe" -ArgumentList "-addstore", "-f", "Root", "${tempFile}" -Verb RunAs -Wait -PassThru
+Write-Output "ExitCode: $($process.ExitCode)"
+`.trim()
+
+      const powershell = spawn('powershell.exe', [
         '-ExecutionPolicy', 'Bypass',
         '-NoProfile',
         '-WindowStyle', 'Hidden',
-        '-Command',
-        `Start-Process -FilePath 'certutil' -ArgumentList '-addstore','-f','Root','${tempFile}' -Verb RunAs -Wait -PassThru | Select-Object ExitCode`
+        '-Command', powershellCommand
       ], { 
-        shell: true,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
       })
       
       let output = ''

@@ -299,7 +299,7 @@ export default {
         // Show confirmation dialog with privilege escalation notice
         const isWindows = navigator.platform.toLowerCase().includes('win')
         const confirmMessage = isWindows 
-          ? `确定要导入证书 "${cert.filename}" 吗？\n\n导入过程将自动请求系统管理员权限。Windows平台使用原生certutil工具进行安全导入。\n\n请在弹出的UAC对话框中点击"是"以允许权限提升。`
+          ? `确定要导入证书 "${cert.filename}" 吗？\n\n导入过程将自动请求系统管理员权限。Windows平台使用原生certutil工具进行安全导入，支持自签名证书。\n\n请在弹出的UAC对话框中点击"是"以允许权限提升。`
           : `确定要导入证书 "${cert.filename}" 吗？\n\n导入过程将自动请求系统管理员权限，请在弹出的权限提升对话框中点击"是"或输入管理员密码。`
           
         await ElMessageBox.confirm(
@@ -343,7 +343,7 @@ export default {
       try {
         const isWindows = navigator.platform.toLowerCase().includes('win')
         const batchConfirmMessage = isWindows
-          ? `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？\n\n导入过程将自动请求系统管理员权限。Windows平台使用原生certutil工具进行安全导入。\n\n请在弹出的UAC对话框中点击"是"以允许权限提升。`
+          ? `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？\n\n导入过程将自动请求系统管理员权限。Windows平台使用原生certutil工具进行安全导入，支持自签名证书。\n\n请在弹出的UAC对话框中点击"是"以允许权限提升。`
           : `确定要导入 ${uninstalledCerts.length} 个未信任的证书吗？\n\n导入过程将自动请求系统管理员权限，请在弹出的权限提升对话框中点击"是"或输入管理员密码。`
           
         await ElMessageBox.confirm(
