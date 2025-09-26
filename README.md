@@ -93,6 +93,7 @@ CertificateImportAssistant/
 ### Windows
 - Uses PowerShell and `certlm` commands for certificate management
 - Installs certificates to the Local Machine Root Certificate Store
+- **Note**: The Windows build uses `CSC_IDENTITY_AUTO_DISCOVERY=false` to avoid symbolic link privilege issues during packaging
 
 ### macOS
 - Uses `security` command for keychain management
@@ -106,6 +107,19 @@ CertificateImportAssistant/
 - The application requires administrator privileges to install certificates to system trust stores
 - All certificate operations are performed using native system commands
 - Certificate content is temporarily written to system temp directory during installation
+
+## Troubleshooting (故障排除)
+
+### Windows Build Issues
+
+**Error**: "客户端没有所需的特权" (Client doesn't have required privileges) during Windows packaging
+
+**Solution**: This issue is already fixed in the current build configuration. The `build:win` script uses `CSC_IDENTITY_AUTO_DISCOVERY=false` to prevent electron-builder from downloading code signing tools that require administrator privileges.
+
+If you encounter this error:
+1. Ensure you're using the latest version of the repository
+2. The build script should include: `CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win`
+3. No administrator privileges should be required for building
 
 ## Contributing (贡献)
 
