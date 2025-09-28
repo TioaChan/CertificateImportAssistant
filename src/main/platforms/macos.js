@@ -117,9 +117,9 @@ class MacOSCertificateManager {
             console.log("Installing certificate:", tempFile);
 
             // Create an AppleScript that adds the certificate and sets trust settings
-            // First add the certificate, then set trust policy separately for better reliability
+            // Use add-trusted-cert with simplified parameters to avoid SecTrustSettingsSetTrustSettings errors
             const appleScript = `
-do shell script "security add-cert -k /Library/Keychains/System.keychain '${tempFile}' && security add-trusted-cert -d -r trustRoot -p ssl -k /Library/Keychains/System.keychain '${tempFile}'" with administrator privileges
+do shell script "security add-trusted-cert -r trustRoot -k /Library/Keychains/System.keychain '${tempFile}'" with administrator privileges
 `;
 
             const osascript = spawn("osascript", ["-e", appleScript]);
@@ -166,10 +166,13 @@ do shell script "security add-cert -k /Library/Keychains/System.keychain '${temp
                             success: false,
                             error: "用户取消了权限提升请求",
                         });
-                    } else if (errorMsg.includes("already exists")) {
-                        // Certificate already exists, try to just set trust
-                        console.log("Certificate already exists, attempting to set trust only");
-                        this.setTrustOnly(tempFile, certificateContent).then(resolve);
+                    } else if (
+                        errorMsg.includes("already exists") ||
+                        errorMsg.includes("SecTrustSettingsSetTrustSettings")
+                    ) {
+                        // Certificate already exists or trust settings failed, try alternative approach
+                        console.log("Certificate exists or trust settings failed, trying alternative approach");
+                        this.installWithAlternativeMethod(tempFile, certificateContent).then(resolve);
                     } else {
                         resolve({
                             success: false,
@@ -193,6 +196,115 @@ do shell script "security add-cert -k /Library/Keychains/System.keychain '${temp
     }
 
     /**
+     * Alternative installation method using two separate steps
+     * @param {string} tempFile - Temporary certificate file path
+     * @param {string} certificateContent - The certificate content
+     * @returns {Promise<object>} - Installation result
+     */
+    static installWithAlternativeMethod(tempFile, certificateContent) {
+        return new Promise((resolve) => {
+            console.log("Using alternative installation method");
+            
+            // Step 1: Add certificate without trust settings
+            const addCertScript = `
+do shell script "security add-cert -k /Library/Keychains/System.keychain '${tempFile}'" with administrator privileges
+`;
+
+            const osascript = spawn("osascript", ["-e", addCertScript]);
+
+            let output = "";
+            let errorOutput = "";
+
+            osascript.stdout.on("data", (data) => {
+                output += data.toString();
+            });
+
+            osascript.stderr.on("data", (data) => {
+                errorOutput += data.toString();
+            });
+
+            osascript.on("close", (code) => {
+                console.log("Add certificate exit code:", code);
+                
+                if (code === 0 || errorOutput.includes("already exists")) {
+                    // Certificate added successfully or already exists, now try to set trust
+                    console.log("Certificate added, now setting trust manually");
+                    this.setManualTrust(tempFile, certificateContent).then(resolve);
+                } else {
+                    resolve({
+                        success: false,
+                        error: `证书添加失败: ${errorOutput || "未知错误"}`,
+                    });
+                }
+            });
+
+            osascript.on("error", (error) => {
+                resolve({
+                    success: false,
+                    error: `权限提升失败: ${error.message}`,
+                });
+            });
+        });
+    }
+
+    /**
+     * Set manual trust for certificate using basic add-trusted-cert
+     * @param {string} tempFile - Temporary certificate file path
+     * @param {string} certificateContent - The certificate content
+     * @returns {Promise<object>} - Trust setting result
+     */
+    static setManualTrust(tempFile, certificateContent) {
+        return new Promise((resolve) => {
+            console.log("Setting manual trust for certificate");
+            
+            // Try basic trust setting without domain/policy flags
+            const trustScript = `
+do shell script "security add-trusted-cert -k /Library/Keychains/System.keychain '${tempFile}'" with administrator privileges
+`;
+
+            const osascript = spawn("osascript", ["-e", trustScript]);
+
+            let output = "";
+            let errorOutput = "";
+
+            osascript.stdout.on("data", (data) => {
+                output += data.toString();
+            });
+
+            osascript.stderr.on("data", (data) => {
+                errorOutput += data.toString();
+            });
+
+            osascript.on("close", (code) => {
+                console.log("Trust setting exit code:", code);
+                
+                if (code === 0) {
+                    resolve({
+                        success: true,
+                        message: "证书导入成功，请在系统设置中验证信任状态",
+                    });
+                } else if (errorOutput.includes("already trusted") || errorOutput.includes("already exists")) {
+                    resolve({
+                        success: true,
+                        message: "证书已存在并设置为受信任状态",
+                    });
+                } else {
+                    resolve({
+                        success: false,
+                        error: `信任设置失败: ${errorOutput || "未知错误"}，请手动在系统设置中设置证书信任`,
+                    });
+                }
+            });
+
+            osascript.on("error", (error) => {
+                resolve({
+                    success: false,
+                    error: `设置信任失败: ${error.message}`,
+                });
+            });
+        });
+    }
+    /**
      * Set trust settings for an already imported certificate
      * @param {string} tempFile - Temporary certificate file path
      * @param {string} certificateContent - The certificate content
@@ -201,7 +313,7 @@ do shell script "security add-cert -k /Library/Keychains/System.keychain '${temp
     static setTrustOnly(tempFile, certificateContent) {
         return new Promise((resolve) => {
             const trustScript = `
-do shell script "security add-trusted-cert -d -r trustRoot -p ssl -k /Library/Keychains/System.keychain '${tempFile}'" with administrator privileges
+do shell script "security add-trusted-cert -r trustRoot -k /Library/Keychains/System.keychain '${tempFile}'" with administrator privileges
 `;
 
             const osascript = spawn("osascript", ["-e", trustScript]);
