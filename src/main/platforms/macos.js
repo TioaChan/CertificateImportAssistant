@@ -111,10 +111,31 @@ class MacOSCertificateManager {
     static installCertificate(certificateContent) {
         return new Promise((resolve) => {
             const tempFile = path.join(os.tmpdir(), `install_cert_${Date.now()}.pem`);
-            fs.writeFileSync(tempFile, certificateContent);
-
-            console.log("=== macOS Certificate Installation ===");
-            console.log("Installing certificate:", tempFile);
+            
+            try {
+                // Write certificate to temp file with proper permissions
+                fs.writeFileSync(tempFile, certificateContent, { mode: 0o644 });
+                
+                // Verify the file was written correctly
+                if (!fs.existsSync(tempFile)) {
+                    resolve({
+                        success: false,
+                        error: "临时证书文件创建失败",
+                    });
+                    return;
+                }
+                
+                console.log("=== macOS Certificate Installation ===");
+                console.log("Installing certificate:", tempFile);
+                console.log("File size:", fs.statSync(tempFile).size, "bytes");
+                
+            } catch (error) {
+                resolve({
+                    success: false,
+                    error: `临时证书文件创建失败: ${error.message}`,
+                });
+                return;
+            }
 
             // Create an AppleScript that adds the certificate and sets trust settings
             // Use add-trusted-cert with simplified parameters to avoid SecTrustSettingsSetTrustSettings errors
@@ -136,10 +157,6 @@ do shell script "security add-trusted-cert -r trustRoot -k /Library/Keychains/Sy
             });
 
             osascript.on("close", (code) => {
-                try {
-                    fs.unlinkSync(tempFile);
-                } catch (e) {}
-
                 console.log("=== Certificate Installation Results ===");
                 console.log("osascript exit code:", code);
                 console.log("Output:", output.trim());
@@ -149,6 +166,9 @@ do shell script "security add-trusted-cert -r trustRoot -k /Library/Keychains/Sy
 
                 if (code === 0) {
                     console.log("Certificate installation successful");
+                    try {
+                        fs.unlinkSync(tempFile);
+                    } catch (e) {}
                     resolve({
                         success: true,
                         message: "证书导入成功并已设置为受信任的根证书",
@@ -162,18 +182,26 @@ do shell script "security add-trusted-cert -r trustRoot -k /Library/Keychains/Sy
                         errorMsg.includes("用户取消") ||
                         errorMsg.includes("User canceled")
                     ) {
+                        try {
+                            fs.unlinkSync(tempFile);
+                        } catch (e) {}
                         resolve({
                             success: false,
                             error: "用户取消了权限提升请求",
                         });
                     } else if (
                         errorMsg.includes("already exists") ||
-                        errorMsg.includes("SecTrustSettingsSetTrustSettings")
+                        errorMsg.includes("SecTrustSettingsSetTrustSettings") ||
+                        errorMsg.includes("Error reading file")
                     ) {
-                        // Certificate already exists or trust settings failed, try alternative approach
-                        console.log("Certificate exists or trust settings failed, trying alternative approach");
+                        // Certificate exists, trust settings failed, or file reading error - try alternative approach
+                        // Don't delete tempFile yet, let alternative method handle it
+                        console.log("Certificate exists, trust settings failed, or file error - trying alternative approach");
                         this.installWithAlternativeMethod(tempFile, certificateContent).then(resolve);
                     } else {
+                        try {
+                            fs.unlinkSync(tempFile);
+                        } catch (e) {}
                         resolve({
                             success: false,
                             error: `证书导入失败: ${errorMsg}`,
@@ -183,10 +211,10 @@ do shell script "security add-trusted-cert -r trustRoot -k /Library/Keychains/Sy
             });
 
             osascript.on("error", (error) => {
+                console.error("osascript spawn error:", error);
                 try {
                     fs.unlinkSync(tempFile);
                 } catch (e) {}
-                console.error("osascript spawn error:", error);
                 resolve({
                     success: false,
                     error: `权限提升失败: ${error.message}`,
@@ -204,6 +232,21 @@ do shell script "security add-trusted-cert -r trustRoot -k /Library/Keychains/Sy
     static installWithAlternativeMethod(tempFile, certificateContent) {
         return new Promise((resolve) => {
             console.log("Using alternative installation method");
+            
+            // Verify temp file still exists
+            try {
+                if (!fs.existsSync(tempFile)) {
+                    // Recreate the temp file if it doesn't exist
+                    fs.writeFileSync(tempFile, certificateContent, { mode: 0o644 });
+                    console.log("Recreated temp file for alternative method");
+                }
+            } catch (error) {
+                resolve({
+                    success: false,
+                    error: `临时文件处理失败: ${error.message}`,
+                });
+                return;
+            }
             
             // Step 1: Add certificate without trust settings
             const addCertScript = `
@@ -231,6 +274,10 @@ do shell script "security add-cert -k /Library/Keychains/System.keychain '${temp
                     console.log("Certificate added, now setting trust manually");
                     this.setManualTrust(tempFile, certificateContent).then(resolve);
                 } else {
+                    // Clean up temp file on failure
+                    try {
+                        fs.unlinkSync(tempFile);
+                    } catch (e) {}
                     resolve({
                         success: false,
                         error: `证书添加失败: ${errorOutput || "未知错误"}`,
@@ -239,6 +286,10 @@ do shell script "security add-cert -k /Library/Keychains/System.keychain '${temp
             });
 
             osascript.on("error", (error) => {
+                // Clean up temp file on error
+                try {
+                    fs.unlinkSync(tempFile);
+                } catch (e) {}
                 resolve({
                     success: false,
                     error: `权限提升失败: ${error.message}`,
@@ -256,6 +307,21 @@ do shell script "security add-cert -k /Library/Keychains/System.keychain '${temp
     static setManualTrust(tempFile, certificateContent) {
         return new Promise((resolve) => {
             console.log("Setting manual trust for certificate");
+            
+            // Verify temp file still exists
+            try {
+                if (!fs.existsSync(tempFile)) {
+                    // Recreate the temp file if it doesn't exist
+                    fs.writeFileSync(tempFile, certificateContent, { mode: 0o644 });
+                    console.log("Recreated temp file for manual trust");
+                }
+            } catch (error) {
+                resolve({
+                    success: false,
+                    error: `临时文件处理失败: ${error.message}`,
+                });
+                return;
+            }
             
             // Try basic trust setting without domain/policy flags
             const trustScript = `
@@ -278,6 +344,11 @@ do shell script "security add-trusted-cert -k /Library/Keychains/System.keychain
             osascript.on("close", (code) => {
                 console.log("Trust setting exit code:", code);
                 
+                // Always clean up temp file
+                try {
+                    fs.unlinkSync(tempFile);
+                } catch (e) {}
+                
                 if (code === 0) {
                     resolve({
                         success: true,
@@ -297,6 +368,10 @@ do shell script "security add-trusted-cert -k /Library/Keychains/System.keychain
             });
 
             osascript.on("error", (error) => {
+                // Clean up temp file on error
+                try {
+                    fs.unlinkSync(tempFile);
+                } catch (e) {}
                 resolve({
                     success: false,
                     error: `设置信任失败: ${error.message}`,
