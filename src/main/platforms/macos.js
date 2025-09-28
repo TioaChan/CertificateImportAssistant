@@ -19,10 +19,9 @@ class MacOSCertificateManager {
             console.log("Checking certificate:", certInfo.name);
             console.log("Expected fingerprint:", certInfo.fingerprint);
 
-            // Check multiple keychains for certificate using fingerprint
+            // Check System keychain where certificates are installed
             const keychains = [
                 "/Library/Keychains/System.keychain",
-                "~/Library/Keychains/login.keychain-db",
             ];
 
             let found = false;
