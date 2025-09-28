@@ -28,7 +28,7 @@ A cross-platform certificate import assistant built with Electron, Vue3, and Ele
 
 ### Prerequisites (前置要求)
 
-- Node.js 16 or higher
+- Node.js 20 or higher
 - npm or yarn
 
 ### Setup (设置)
@@ -91,7 +91,7 @@ CertificateImportAssistant/
 ## Platform-Specific Implementation (平台特定实现)
 
 ### Windows
-- Uses PowerShell and `certlm` commands for certificate management
+- Uses PowerShell and `certutil` commands for certificate management
 - Installs certificates to the Local Machine Root Certificate Store
 
 ### macOS
@@ -106,24 +106,3 @@ CertificateImportAssistant/
 - The application requires administrator privileges to install certificates to system trust stores
 - All certificate operations are performed using native system commands
 - Certificate content is temporarily written to system temp directory during installation
-
-## Contributing (贡献)
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License (许可证)
-
-MIT License - see LICENSE file for details
-
-## Changelog (更新日志)
-
-### v1.0.0
-- Initial release
-- Cross-platform certificate import functionality
-- Vue3 + ElementPlus UI
-- Windows x64 and macOS ARM support
-- One-click import feature
