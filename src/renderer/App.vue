@@ -4,45 +4,46 @@
             <el-header class="app-header">
                 <div class="app-title">
                     <el-icon><Lock /></el-icon>
-                    证书导入助手
+                    网络助手
                 </div>
             </el-header>
 
             <el-main class="app-main">
-                <div class="toolbar">
-                    <el-button
-                        type="primary"
-                        @click="refreshCertificateStatus"
-                        :loading="loading"
-                    >
-                        <template #icon>
-                            <Refresh />
-                        </template>
-                        刷新证书列表
-                    </el-button>
-
-                    <el-tooltip
-                        content="批量导入所有未信任的证书，将自动请求管理员权限"
-                        placement="top"
-                    >
-                        <el-button
-                            type="success"
-                            @click="importAllCertificates"
-                            :disabled="!hasUninstalledCerts || installing"
-                            :loading="installingAll"
-                        >
-                            <template #icon>
-                                <Download />
-                            </template>
-                            一键导入全部 ({{ uninstalledCount }})
-                        </el-button>
-                    </el-tooltip>
-                </div>
-
                 <el-card class="certificate-list" v-loading="loading">
                     <template #header>
                         <div class="card-header">
                             <span>证书列表 ({{ certificates.length }})</span>
+                            <div class="header-actions">
+                                <el-button
+                                    type="primary"
+                                    size="small"
+                                    @click="refreshCertificateStatus"
+                                    :loading="loading"
+                                >
+                                    <template #icon>
+                                        <Refresh />
+                                    </template>
+                                    刷新证书列表
+                                </el-button>
+
+                                <el-tooltip
+                                    content="批量导入所有未信任的证书，将自动请求管理员权限"
+                                    placement="top"
+                                >
+                                    <el-button
+                                        type="success"
+                                        size="small"
+                                        @click="importAllCertificates"
+                                        :disabled="!hasUninstalledCerts || installing"
+                                        :loading="installingAll"
+                                    >
+                                        <template #icon>
+                                            <Download />
+                                        </template>
+                                        一键导入全部 ({{ uninstalledCount }})
+                                    </el-button>
+                                </el-tooltip>
+                            </div>
                         </div>
                     </template>
 
@@ -153,6 +154,95 @@
                         </el-row>
                     </div>
                 </el-card>
+
+                <!-- Network Detection Card -->
+                <el-card class="network-detection" v-loading="networkLoading">
+                    <template #header>
+                        <div class="card-header">
+                            <span>网络检测 ({{ domains.length }})</span>
+                            <div class="header-actions">
+                                <el-button
+                                    type="primary"
+                                    size="small"
+                                    @click="checkNetworkStatus"
+                                    :loading="networkLoading"
+                                >
+                                    <template #icon>
+                                        <Refresh />
+                                    </template>
+                                    刷新网络状态
+                                </el-button>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div v-if="domains.length === 0" class="empty-state">
+                        <el-empty description="没有配置域名" />
+                    </div>
+
+                    <div v-else>
+                        <el-row :gutter="20">
+                            <el-col
+                                :xs="24"
+                                :sm="12"
+                                :md="8"
+                                :lg="6"
+                                v-for="domain in domains"
+                                :key="domain.id"
+                                class="domain-item"
+                            >
+                                <el-card class="domain-card">
+                                    <template #header>
+                                        <div class="domain-header">
+                                            <div class="domain-name">
+                                                {{ domain.name }}
+                                            </div>
+                                            <el-tooltip
+                                                :content="domain.errorMessage || '可访问'"
+                                                placement="top"
+                                                :disabled="domain.status === 'accessible'"
+                                            >
+                                                <el-tag
+                                                    :type="
+                                                        domain.status === 'accessible'
+                                                            ? 'success'
+                                                            : domain.status === 'checking'
+                                                            ? 'info'
+                                                            : 'danger'
+                                                    "
+                                                    size="small"
+                                                >
+                                                    {{
+                                                        domain.status === 'accessible'
+                                                            ? '可访问'
+                                                            : domain.status === 'checking'
+                                                            ? '检测中'
+                                                            : '无法访问'
+                                                    }}
+                                                </el-tag>
+                                            </el-tooltip>
+                                        </div>
+                                    </template>
+
+                                    <div class="domain-details">
+                                        <div class="detail-row">
+                                            <span class="label">域名:</span>
+                                            <span class="value">{{ domain.domain }}</span>
+                                        </div>
+                                        <div v-if="domain.ip" class="detail-row">
+                                            <span class="label">IP:</span>
+                                            <span class="value">{{ domain.ip }}</span>
+                                        </div>
+                                        <div v-if="domain.responseTime" class="detail-row">
+                                            <span class="label">响应时间:</span>
+                                            <span class="value">{{ domain.responseTime }}ms</span>
+                                        </div>
+                                    </div>
+                                </el-card>
+                            </el-col>
+                        </el-row>
+                    </div>
+                </el-card>
             </el-main>
         </el-container>
 
@@ -218,6 +308,10 @@ const installing = ref(false);
 const installingAll = ref(false);
 const showResultDialog = ref(false);
 const importResults = ref([]);
+
+// Network detection state
+const domains = ref([]);
+const networkLoading = ref(false);
 
 const hasUninstalledCerts = computed(() => {
     return certificates.value.some((cert) => !cert.isInstalled);
@@ -391,8 +485,68 @@ const refreshAfterImport = () => {
     refreshCertificateStatus();
 };
 
+const loadDomains = async () => {
+    try {
+        if (window.electronAPI && window.electronAPI.getDomains) {
+            const domainList = await window.electronAPI.getDomains();
+            domains.value = domainList.map(d => ({
+                ...d,
+                status: 'unknown',
+                errorMessage: '',
+                ip: '',
+                responseTime: null
+            }));
+        }
+    } catch (error) {
+        console.error("Error loading domains:", error);
+        ElMessage.error("加载域名配置失败: " + error.message);
+    }
+};
+
+const checkNetworkStatus = async () => {
+    if (!window.electronAPI || !window.electronAPI.checkDomainStatus) {
+        ElMessage.warning("网络检测功能不可用");
+        return;
+    }
+
+    networkLoading.value = true;
+    try {
+        // Set all domains to checking status
+        domains.value.forEach(d => {
+            d.status = 'checking';
+            d.errorMessage = '';
+            d.ip = '';
+            d.responseTime = null;
+        });
+
+        // Check each domain
+        for (const domain of domains.value) {
+            try {
+                const result = await window.electronAPI.checkDomainStatus(domain.domain);
+                domain.status = result.accessible ? 'accessible' : 'inaccessible';
+                domain.errorMessage = result.errorMessage || '';
+                domain.ip = result.ip || '';
+                domain.responseTime = result.responseTime || null;
+            } catch (error) {
+                domain.status = 'inaccessible';
+                domain.errorMessage = error.message;
+            }
+        }
+
+        const accessibleCount = domains.value.filter(d => d.status === 'accessible').length;
+        ElMessage.success(`网络检测完成：${accessibleCount}/${domains.value.length} 个域名可访问`);
+    } catch (error) {
+        console.error("Error checking network status:", error);
+        ElMessage.error("网络检测失败: " + error.message);
+    } finally {
+        networkLoading.value = false;
+    }
+};
+
 onMounted(() => {
     loadCertificates();
+    loadDomains();
+    checkNetworkStatus();
 });
 </script>
 
@@ -450,21 +604,24 @@ body,
     background-color: #f5f7fa;
 }
 
-.toolbar {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-}
-
-.certificate-list {
+.certificate-list,
+.network-detection {
     box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
 }
 
 .card-header {
     font-size: 16px;
     font-weight: bold;
     color: #303133;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
 }
 
 .empty-state {
@@ -574,16 +731,51 @@ body,
     color: #f56c6c;
 }
 
+.domain-item {
+    margin-bottom: 20px;
+}
+
+.domain-card {
+    height: 100%;
+    transition: all 0.3s ease;
+}
+
+.domain-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.domain-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.domain-name {
+    font-weight: bold;
+    color: #303133;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.domain-details {
+    margin: 12px 0;
+}
+
 @media (max-width: 768px) {
     .app-main {
         padding: 10px;
     }
 
-    .toolbar {
+    .header-actions {
         flex-direction: column;
+        width: 100%;
     }
 
-    .toolbar .el-button {
+    .header-actions .el-button {
         width: 100%;
     }
 }

@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const forge = require("node-forge");
 const PlatformCertificateManagerFactory = require("./platforms/factory");
+const PlatformNetworkCheckerFactory = require("./platforms/network-factory");
 
 let mainWindow;
 
@@ -180,6 +181,44 @@ ipcMain.handle("install-all-certificates", async (event, certificates) => {
     } catch (error) {
         console.error("Error installing certificates:", error);
         return { success: false, error: error.message };
+    }
+});
+
+// Network detection IPC handlers
+ipcMain.handle("get-domains", async () => {
+    try {
+        const configDir = app.isPackaged
+            ? path.join(process.resourcesPath, "config")
+            : path.join(__dirname, "../../config");
+        
+        const domainsPath = path.join(configDir, "domains.json");
+        
+        if (fs.existsSync(domainsPath)) {
+            const domainsContent = fs.readFileSync(domainsPath, "utf8");
+            const domains = JSON.parse(domainsContent);
+            return domains;
+        } else {
+            console.warn("domains.json not found at:", domainsPath);
+            return [];
+        }
+    } catch (error) {
+        console.error("Error reading domains:", error);
+        return [];
+    }
+});
+
+ipcMain.handle("check-domain-status", async (event, domain) => {
+    try {
+        const result = await PlatformNetworkCheckerFactory.checkDomainStatus(domain);
+        return result;
+    } catch (error) {
+        console.error("Error checking domain status:", error);
+        return {
+            accessible: false,
+            errorMessage: error.message,
+            ip: null,
+            responseTime: null
+        };
     }
 });
 
