@@ -2,8 +2,8 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const forge = require("node-forge");
-const PlatformCertificateManagerFactory = require("./platforms/factory");
-const PlatformNetworkCheckerFactory = require("./platforms/network-factory");
+const PlatformCertificateManagerFactory = require("./modules/certificate/platforms/factory");
+const PlatformNetworkCheckerFactory = require("./modules/network/platforms/factory");
 
 let mainWindow;
 

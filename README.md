@@ -78,15 +78,19 @@ CertificateImportAssistant/
 ├── src/
 │   ├── main/               # Electron main process
 │   │   ├── main.js
-│   │   └── platforms/      # Platform-specific implementations
-│   │       ├── factory.js              # Certificate manager factory
-│   │       ├── windows.js              # Windows certificate operations
-│   │       ├── macos.js                # macOS certificate operations
-│   │       ├── linux.js                # Linux certificate operations
-│   │       ├── network-factory.js      # Network checker factory
-│   │       ├── network-windows.js      # Windows network detection
-│   │       ├── network-macos.js        # macOS network detection
-│   │       └── network-linux.js        # Linux network detection
+│   │   └── modules/        # Modular backend logic
+│   │       ├── certificate/          # Certificate management module
+│   │       │   └── platforms/        # Platform-specific implementations
+│   │       │       ├── factory.js    # Certificate manager factory
+│   │       │       ├── windows.js    # Windows certificate operations
+│   │       │       ├── macos.js      # macOS certificate operations
+│   │       │       └── linux.js      # Linux certificate operations
+│   │       └── network/              # Network detection module
+│   │           └── platforms/        # Platform-specific implementations
+│   │               ├── factory.js    # Network checker factory
+│   │               ├── windows.js    # Windows network detection
+│   │               ├── macos.js      # macOS network detection
+│   │               └── linux.js      # Linux network detection
 │   ├── preload/            # Electron preload scripts
 │   │   └── preload.js
 │   └── renderer/           # Vue application

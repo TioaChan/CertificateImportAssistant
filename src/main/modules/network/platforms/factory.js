@@ -1,7 +1,7 @@
 const os = require("os");
-const WindowsNetworkChecker = require("./network-windows");
-const MacOSNetworkChecker = require("./network-macos");
-const LinuxNetworkChecker = require("./network-linux");
+const WindowsNetworkChecker = require("./windows");
+const MacOSNetworkChecker = require("./macos");
+const LinuxNetworkChecker = require("./linux");
 
 /**
  * Platform factory to get the appropriate network checker for the current platform
