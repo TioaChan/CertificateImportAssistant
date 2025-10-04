@@ -1,1 +1,5 @@
-[{ "id": 1, "name": "GitHub", "domain": "github.com" }]
+[
+    { "id": 1, "name": "GitHub", "domain": "github.com" },
+    { "id": 2, "name": "Google", "domain": "google.com" },
+    { "id": 3, "name": "百度", "domain": "baidu.com" }
+]
