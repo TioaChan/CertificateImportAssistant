@@ -489,13 +489,23 @@ const loadDomains = async () => {
     try {
         if (window.electronAPI && window.electronAPI.getDomains) {
             const domainList = await window.electronAPI.getDomains();
-            domains.value = domainList.map(d => ({
-                ...d,
-                status: 'unknown',
-                errorMessage: '',
-                ip: '',
-                responseTime: null
-            }));
+            console.log("Loaded domains:", domainList);
+            if (domainList && domainList.length > 0) {
+                domains.value = domainList.map(d => ({
+                    ...d,
+                    status: 'unknown',
+                    errorMessage: '',
+                    ip: '',
+                    responseTime: null
+                }));
+                console.log("Domains initialized:", domains.value.length);
+            } else {
+                console.warn("No domains found in configuration");
+                ElMessage.warning("未找到域名配置，请检查 config/domains.json 文件");
+            }
+        } else {
+            console.error("electronAPI.getDomains not available");
+            ElMessage.error("域名加载功能不可用");
         }
     } catch (error) {
         console.error("Error loading domains:", error);
@@ -506,6 +516,11 @@ const loadDomains = async () => {
 const checkNetworkStatus = async () => {
     if (!window.electronAPI || !window.electronAPI.checkDomainStatus) {
         ElMessage.warning("网络检测功能不可用");
+        return;
+    }
+
+    if (domains.value.length === 0) {
+        console.log("No domains to check");
         return;
     }
 
@@ -543,10 +558,12 @@ const checkNetworkStatus = async () => {
     }
 };
 
-onMounted(() => {
+onMounted(async () => {
     loadCertificates();
-    loadDomains();
-    checkNetworkStatus();
+    await loadDomains();
+    if (domains.value.length > 0) {
+        checkNetworkStatus();
+    }
 });
 </script>
 

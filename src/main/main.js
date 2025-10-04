@@ -192,13 +192,17 @@ ipcMain.handle("get-domains", async () => {
             : path.join(__dirname, "../../config");
         
         const domainsPath = path.join(configDir, "domains.json");
+        console.log("Looking for domains.json at:", domainsPath);
         
         if (fs.existsSync(domainsPath)) {
             const domainsContent = fs.readFileSync(domainsPath, "utf8");
             const domains = JSON.parse(domainsContent);
+            console.log("Successfully loaded domains:", domains.length);
             return domains;
         } else {
             console.warn("domains.json not found at:", domainsPath);
+            console.log("Current directory:", __dirname);
+            console.log("Is packaged:", app.isPackaged);
             return [];
         }
     } catch (error) {
