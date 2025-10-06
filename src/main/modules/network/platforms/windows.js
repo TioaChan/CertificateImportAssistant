@@ -37,8 +37,8 @@ class WindowsNetworkChecker {
             return new Promise((resolve) => {
                 const startTime = Date.now();
                 
-                // Use ping command with -n 1 (send 1 packet) and -w 5000 (timeout 5 seconds)
-                const ping = spawn("ping", ["-n", "1", "-w", "5000", domain], {
+                // Use ping command with -n 1 (send 1 packet) and -w 3000 (timeout 3 seconds)
+                const ping = spawn("ping", ["-n", "1", "-w", "3000", domain], {
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                 });

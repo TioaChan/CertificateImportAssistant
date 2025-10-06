@@ -9,6 +9,7 @@
             </el-header>
 
             <el-main class="app-main">
+                <el-scrollbar>
                 <el-card class="certificate-list" v-loading="loading">
                     <template #header>
                         <div class="card-header">
@@ -180,69 +181,54 @@
                         <el-empty description="没有配置域名" />
                     </div>
 
-                    <div v-else>
-                        <el-row :gutter="20">
-                            <el-col
-                                :xs="24"
-                                :sm="12"
-                                :md="8"
-                                :lg="6"
-                                v-for="domain in domains"
-                                :key="domain.id"
-                                class="domain-item"
-                            >
-                                <el-card class="domain-card">
-                                    <template #header>
-                                        <div class="domain-header">
-                                            <div class="domain-name">
-                                                {{ domain.name }}
-                                            </div>
-                                            <el-tooltip
-                                                :content="domain.errorMessage || '可访问'"
-                                                placement="top"
-                                                :disabled="domain.status === 'accessible'"
-                                            >
-                                                <el-tag
-                                                    :type="
-                                                        domain.status === 'accessible'
-                                                            ? 'success'
-                                                            : domain.status === 'checking'
-                                                            ? 'info'
-                                                            : 'danger'
-                                                    "
-                                                    size="small"
-                                                >
-                                                    {{
-                                                        domain.status === 'accessible'
-                                                            ? '可访问'
-                                                            : domain.status === 'checking'
-                                                            ? '检测中'
-                                                            : '无法访问'
-                                                    }}
-                                                </el-tag>
-                                            </el-tooltip>
-                                        </div>
-                                    </template>
-
-                                    <div class="domain-details">
-                                        <div class="detail-row">
-                                            <span class="label">域名:</span>
-                                            <span class="value">{{ domain.domain }}</span>
-                                        </div>
-                                        <div v-if="domain.ip" class="detail-row">
-                                            <span class="label">IP:</span>
-                                            <span class="value">{{ domain.ip }}</span>
-                                        </div>
-                                        <div v-if="domain.responseTime" class="detail-row">
-                                            <span class="label">响应时间:</span>
-                                            <span class="value">{{ domain.responseTime }}ms</span>
-                                        </div>
-                                    </div>
-                                </el-card>
-                            </el-col>
-                        </el-row>
+                    <div v-else class="network-list">
+                        <div 
+                            v-for="domain in domains" 
+                            :key="domain.id" 
+                            class="network-item"
+                        >
+                            <div class="network-item-main">
+                                <div class="network-name">{{ domain.name }}</div>
+                                <div class="network-domain">{{ domain.domain }}</div>
+                            </div>
+                            <div class="network-item-details">
+                                <div class="network-status">
+                                    <el-tag
+                                        :type="
+                                            domain.status === 'accessible'
+                                                ? 'success'
+                                                : domain.status === 'checking'
+                                                ? 'info'
+                                                : 'danger'
+                                        "
+                                        size="small"
+                                    >
+                                        {{
+                                            domain.status === 'accessible'
+                                                ? '可访问'
+                                                : domain.status === 'checking'
+                                                ? '检测中'
+                                                : '无法访问'
+                                        }}
+                                    </el-tag>
+                                </div>
+                                <div v-if="domain.ip" class="network-info">
+                                    <span class="info-label">IP:</span>
+                                    <span class="info-value">{{ domain.ip }}</span>
+                                </div>
+                                <div v-if="domain.responseTime" class="network-info">
+                                    <span class="info-label">响应:</span>
+                                    <span class="info-value">{{ domain.responseTime }}ms</span>
+                                </div>
+                                <div v-if="domain.errorMessage" class="network-error">
+                                    <span class="info-label">错误:</span>
+                                    <span class="info-value error-text">{{ domain.errorMessage }}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </el-card>
+                </el-scrollbar>
             </el-main>
         </el-container>
 
@@ -748,38 +734,74 @@ body,
     color: #f56c6c;
 }
 
-.domain-item {
-    margin-bottom: 20px;
+.network-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
-.domain-card {
-    height: 100%;
+.network-item {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    border: 1px solid #e4e7ed;
+    border-radius: 8px;
+    background-color: #fafafa;
     transition: all 0.3s ease;
 }
 
-.domain-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+.network-item:hover {
+    background-color: #f5f7fa;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.domain-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-}
-
-.domain-name {
-    font-weight: bold;
-    color: #303133;
+.network-item-main {
     flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
 }
 
-.domain-details {
-    margin: 12px 0;
+.network-name {
+    font-weight: bold;
+    font-size: 16px;
+    color: #303133;
+    margin-bottom: 4px;
+}
+
+.network-domain {
+    font-size: 13px;
+    color: #909399;
+}
+
+.network-item-details {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.network-status {
+    margin-right: 8px;
+}
+
+.network-info,
+.network-error {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.info-label {
+    color: #909399;
+    font-weight: 500;
+}
+
+.info-value {
+    color: #606266;
+}
+
+.error-text {
+    color: #f56c6c;
 }
 
 @media (max-width: 768px) {
@@ -794,6 +816,17 @@ body,
 
     .header-actions .el-button {
         width: 100%;
+    }
+
+    .network-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .network-item-details {
+        width: 100%;
+        justify-content: flex-start;
     }
 }
 </style>

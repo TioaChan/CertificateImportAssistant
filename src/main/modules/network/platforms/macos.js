@@ -37,8 +37,8 @@ class MacOSNetworkChecker {
             return new Promise((resolve) => {
                 const startTime = Date.now();
                 
-                // Use ping command with -c 1 (send 1 packet) and -W 5000 (timeout 5 seconds)
-                const ping = spawn("ping", ["-c", "1", "-W", "5000", domain], {
+                // Use ping command with -c 1 (send 1 packet) and -W 3000 (timeout 3 seconds)
+                const ping = spawn("ping", ["-c", "1", "-W", "3000", domain], {
                     stdio: ["pipe", "pipe", "pipe"],
                 });
 
