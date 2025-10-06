@@ -211,17 +211,18 @@ ipcMain.handle("get-domains", async () => {
     }
 });
 
-ipcMain.handle("check-domain-status", async (event, domain) => {
+ipcMain.handle("check-domain-status", async (event, config) => {
     try {
-        const result = await PlatformNetworkCheckerFactory.checkDomainStatus(domain);
+        const result = await PlatformNetworkCheckerFactory.checkNetworkStatus(config);
         return result;
     } catch (error) {
-        console.error("Error checking domain status:", error);
+        console.error("Error checking network status:", error);
         return {
             accessible: false,
             errorMessage: error.message,
             ip: null,
-            responseTime: null
+            responseTime: null,
+            statusCode: null
         };
     }
 });

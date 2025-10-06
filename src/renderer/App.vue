@@ -188,8 +188,12 @@
                             class="network-item"
                         >
                             <div class="network-item-main">
-                                <div class="network-name">{{ domain.name }}</div>
-                                <div class="network-domain">{{ domain.domain }}</div>
+                                <div class="network-name">
+                                    {{ domain.name }}
+                                    <el-tag v-if="domain.type === 'http'" type="info" size="small" style="margin-left: 8px;">HTTP</el-tag>
+                                    <el-tag v-else-if="domain.type === 'ping'" type="info" size="small" style="margin-left: 8px;">PING</el-tag>
+                                </div>
+                                <div class="network-domain">{{ domain.url || domain.domain }}</div>
                             </div>
                             <div class="network-item-details">
                                 <div class="network-status">
@@ -211,6 +215,10 @@
                                                 : '无法访问'
                                         }}
                                     </el-tag>
+                                </div>
+                                <div v-if="domain.statusCode" class="network-info">
+                                    <span class="info-label">状态码:</span>
+                                    <span class="info-value">{{ domain.statusCode }}</span>
                                 </div>
                                 <div v-if="domain.ip" class="network-info">
                                     <span class="info-label">IP:</span>
@@ -518,16 +526,19 @@ const checkNetworkStatus = async () => {
             d.errorMessage = '';
             d.ip = '';
             d.responseTime = null;
+            d.statusCode = null;
         });
 
         // Check each domain
         for (const domain of domains.value) {
             try {
-                const result = await window.electronAPI.checkDomainStatus(domain.domain);
+                // Pass the full domain config object for type-based checking
+                const result = await window.electronAPI.checkDomainStatus(domain);
                 domain.status = result.accessible ? 'accessible' : 'inaccessible';
                 domain.errorMessage = result.errorMessage || '';
                 domain.ip = result.ip || '';
                 domain.responseTime = result.responseTime || null;
+                domain.statusCode = result.statusCode || null;
             } catch (error) {
                 domain.status = 'inaccessible';
                 domain.errorMessage = error.message;
@@ -535,7 +546,7 @@ const checkNetworkStatus = async () => {
         }
 
         const accessibleCount = domains.value.filter(d => d.status === 'accessible').length;
-        ElMessage.success(`网络检测完成：${accessibleCount}/${domains.value.length} 个域名可访问`);
+        ElMessage.success(`网络检测完成：${accessibleCount}/${domains.value.length} 个服务可访问`);
     } catch (error) {
         console.error("Error checking network status:", error);
         ElMessage.error("网络检测失败: " + error.message);
