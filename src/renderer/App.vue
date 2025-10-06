@@ -532,8 +532,16 @@ const checkNetworkStatus = async () => {
         // Check each domain
         for (const domain of domains.value) {
             try {
-                // Pass the full domain config object for type-based checking
-                const result = await window.electronAPI.checkDomainStatus(domain);
+                // Extract only serializable properties for IPC
+                const config = {
+                    id: domain.id,
+                    name: domain.name,
+                    type: domain.type,
+                    domain: domain.domain,
+                    url: domain.url
+                };
+                
+                const result = await window.electronAPI.checkDomainStatus(config);
                 domain.status = result.accessible ? 'accessible' : 'inaccessible';
                 domain.errorMessage = result.errorMessage || '';
                 domain.ip = result.ip || '';
