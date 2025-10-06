@@ -157,7 +157,7 @@
                 </el-card>
 
                 <!-- Network Detection Card -->
-                <el-card class="network-detection" v-loading="networkLoading">
+                <el-card class="network-detection">
                     <template #header>
                         <div class="card-header">
                             <span>网络检测 ({{ domains.length }})</span>
@@ -181,7 +181,7 @@
                         <el-empty description="没有配置域名" />
                     </div>
 
-                    <div v-else class="network-list">
+                    <div v-else class="network-list" v-loading="networkLoading">
                         <div 
                             v-for="domain in domains" 
                             :key="domain.id" 
@@ -605,6 +605,7 @@ body,
 .app-main {
     padding: 20px;
     background-color: #f5f7fa;
+    height: calc(100vh - 40px);
 }
 
 .certificate-list,
