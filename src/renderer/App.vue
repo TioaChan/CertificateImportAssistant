@@ -4,45 +4,47 @@
             <el-header class="app-header">
                 <div class="app-title">
                     <el-icon><Lock /></el-icon>
-                    证书导入助手
+                    网络助手
                 </div>
             </el-header>
 
             <el-main class="app-main">
-                <div class="toolbar">
-                    <el-button
-                        type="primary"
-                        @click="refreshCertificateStatus"
-                        :loading="loading"
-                    >
-                        <template #icon>
-                            <Refresh />
-                        </template>
-                        刷新证书列表
-                    </el-button>
-
-                    <el-tooltip
-                        content="批量导入所有未信任的证书，将自动请求管理员权限"
-                        placement="top"
-                    >
-                        <el-button
-                            type="success"
-                            @click="importAllCertificates"
-                            :disabled="!hasUninstalledCerts || installing"
-                            :loading="installingAll"
-                        >
-                            <template #icon>
-                                <Download />
-                            </template>
-                            一键导入全部 ({{ uninstalledCount }})
-                        </el-button>
-                    </el-tooltip>
-                </div>
-
+                <el-scrollbar>
                 <el-card class="certificate-list" v-loading="loading">
                     <template #header>
                         <div class="card-header">
                             <span>证书列表 ({{ certificates.length }})</span>
+                            <div class="header-actions">
+                                <el-button
+                                    type="primary"
+                                    size="small"
+                                    @click="refreshCertificateStatus"
+                                    :loading="loading"
+                                >
+                                    <template #icon>
+                                        <Refresh />
+                                    </template>
+                                    刷新证书列表
+                                </el-button>
+
+                                <el-tooltip
+                                    content="批量导入所有未信任的证书，将自动请求管理员权限"
+                                    placement="top"
+                                >
+                                    <el-button
+                                        type="success"
+                                        size="small"
+                                        @click="importAllCertificates"
+                                        :disabled="!hasUninstalledCerts || installing"
+                                        :loading="installingAll"
+                                    >
+                                        <template #icon>
+                                            <Download />
+                                        </template>
+                                        一键导入全部 ({{ uninstalledCount }})
+                                    </el-button>
+                                </el-tooltip>
+                            </div>
                         </div>
                     </template>
 
@@ -153,6 +155,88 @@
                         </el-row>
                     </div>
                 </el-card>
+
+                <!-- Network Detection Card -->
+                <el-card class="network-detection">
+                    <template #header>
+                        <div class="card-header">
+                            <span>网络检测 ({{ domains.length }})</span>
+                            <div class="header-actions">
+                                <el-button
+                                    type="primary"
+                                    size="small"
+                                    @click="checkNetworkStatus"
+                                    :loading="networkLoading"
+                                >
+                                    <template #icon>
+                                        <Refresh />
+                                    </template>
+                                    刷新网络状态
+                                </el-button>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div v-if="domains.length === 0" class="empty-state">
+                        <el-empty description="没有配置域名" />
+                    </div>
+
+                    <div v-else class="network-list" v-loading="networkLoading">
+                        <div 
+                            v-for="domain in domains" 
+                            :key="domain.id" 
+                            class="network-item"
+                        >
+                            <div class="network-item-main">
+                                <div class="network-name">
+                                    {{ domain.name }}
+                                    <el-tag v-if="domain.type === 'http'" type="info" size="small" style="margin-left: 8px;">HTTP</el-tag>
+                                    <el-tag v-else-if="domain.type === 'ping'" type="info" size="small" style="margin-left: 8px;">PING</el-tag>
+                                </div>
+                                <div class="network-domain">{{ domain.url || domain.domain }}</div>
+                            </div>
+                            <div class="network-item-details">
+                                <div class="network-status">
+                                    <el-tag
+                                        :type="
+                                            domain.status === 'accessible'
+                                                ? 'success'
+                                                : domain.status === 'checking'
+                                                ? 'info'
+                                                : 'danger'
+                                        "
+                                        size="small"
+                                    >
+                                        {{
+                                            domain.status === 'accessible'
+                                                ? '可访问'
+                                                : domain.status === 'checking'
+                                                ? '检测中'
+                                                : '无法访问'
+                                        }}
+                                    </el-tag>
+                                </div>
+                                <div v-if="domain.statusCode" class="network-info">
+                                    <span class="info-label">状态码:</span>
+                                    <span class="info-value">{{ domain.statusCode }}</span>
+                                </div>
+                                <div v-if="domain.ip" class="network-info">
+                                    <span class="info-label">IP:</span>
+                                    <span class="info-value">{{ domain.ip }}</span>
+                                </div>
+                                <div v-if="domain.responseTime" class="network-info">
+                                    <span class="info-label">响应:</span>
+                                    <span class="info-value">{{ domain.responseTime }}ms</span>
+                                </div>
+                                <div v-if="domain.errorMessage" class="network-error">
+                                    <span class="info-label">错误:</span>
+                                    <span class="info-value error-text">{{ domain.errorMessage }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </el-card>
+                </el-scrollbar>
             </el-main>
         </el-container>
 
@@ -218,6 +302,10 @@ const installing = ref(false);
 const installingAll = ref(false);
 const showResultDialog = ref(false);
 const importResults = ref([]);
+
+// Network detection state
+const domains = ref([]);
+const networkLoading = ref(false);
 
 const hasUninstalledCerts = computed(() => {
     return certificates.value.some((cert) => !cert.isInstalled);
@@ -391,8 +479,96 @@ const refreshAfterImport = () => {
     refreshCertificateStatus();
 };
 
-onMounted(() => {
+const loadDomains = async () => {
+    try {
+        if (window.electronAPI && window.electronAPI.getDomains) {
+            const domainList = await window.electronAPI.getDomains();
+            console.log("Loaded domains:", domainList);
+            if (domainList && domainList.length > 0) {
+                domains.value = domainList.map(d => ({
+                    ...d,
+                    status: 'unknown',
+                    errorMessage: '',
+                    ip: '',
+                    responseTime: null
+                }));
+                console.log("Domains initialized:", domains.value.length);
+            } else {
+                console.warn("No domains found in configuration");
+                ElMessage.warning("未找到域名配置，请检查 config/domains.json 文件");
+            }
+        } else {
+            console.error("electronAPI.getDomains not available");
+            ElMessage.error("域名加载功能不可用");
+        }
+    } catch (error) {
+        console.error("Error loading domains:", error);
+        ElMessage.error("加载域名配置失败: " + error.message);
+    }
+};
+
+const checkNetworkStatus = async () => {
+    if (!window.electronAPI || !window.electronAPI.checkDomainStatus) {
+        ElMessage.warning("网络检测功能不可用");
+        return;
+    }
+
+    if (domains.value.length === 0) {
+        console.log("No domains to check");
+        return;
+    }
+
+    networkLoading.value = true;
+    try {
+        // Set all domains to checking status
+        domains.value.forEach(d => {
+            d.status = 'checking';
+            d.errorMessage = '';
+            d.ip = '';
+            d.responseTime = null;
+            d.statusCode = null;
+        });
+
+        // Check each domain
+        for (const domain of domains.value) {
+            try {
+                // Extract only serializable properties for IPC
+                const config = {
+                    id: domain.id,
+                    name: domain.name,
+                    type: domain.type,
+                    domain: domain.domain,
+                    url: domain.url
+                };
+                
+                const result = await window.electronAPI.checkDomainStatus(config);
+                domain.status = result.accessible ? 'accessible' : 'inaccessible';
+                domain.errorMessage = result.errorMessage || '';
+                domain.ip = result.ip || '';
+                domain.responseTime = result.responseTime || null;
+                domain.statusCode = result.statusCode || null;
+            } catch (error) {
+                domain.status = 'inaccessible';
+                domain.errorMessage = error.message;
+            }
+        }
+
+        const accessibleCount = domains.value.filter(d => d.status === 'accessible').length;
+        ElMessage.success(`网络检测完成：${accessibleCount}/${domains.value.length} 个服务可访问`);
+    } catch (error) {
+        console.error("Error checking network status:", error);
+        ElMessage.error("网络检测失败: " + error.message);
+    } finally {
+        networkLoading.value = false;
+    }
+};
+
+onMounted(async () => {
     loadCertificates();
+    await loadDomains();
+    if (domains.value.length > 0) {
+        checkNetworkStatus();
+    }
 });
 </script>
 
@@ -448,23 +624,27 @@ body,
 .app-main {
     padding: 20px;
     background-color: #f5f7fa;
+    height: calc(100vh - 40px);
 }
 
-.toolbar {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-}
-
-.certificate-list {
+.certificate-list,
+.network-detection {
     box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
 }
 
 .card-header {
     font-size: 16px;
     font-weight: bold;
     color: #303133;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
 }
 
 .empty-state {
@@ -574,17 +754,99 @@ body,
     color: #f56c6c;
 }
 
+.network-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.network-item {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    border: 1px solid #e4e7ed;
+    border-radius: 8px;
+    background-color: #fafafa;
+    transition: all 0.3s ease;
+}
+
+.network-item:hover {
+    background-color: #f5f7fa;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.network-item-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.network-name {
+    font-weight: bold;
+    font-size: 16px;
+    color: #303133;
+    margin-bottom: 4px;
+}
+
+.network-domain {
+    font-size: 13px;
+    color: #909399;
+}
+
+.network-item-details {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.network-status {
+    margin-right: 8px;
+}
+
+.network-info,
+.network-error {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.info-label {
+    color: #909399;
+    font-weight: 500;
+}
+
+.info-value {
+    color: #606266;
+}
+
+.error-text {
+    color: #f56c6c;
+}
+
 @media (max-width: 768px) {
     .app-main {
         padding: 10px;
     }
 
-    .toolbar {
+    .header-actions {
         flex-direction: column;
+        width: 100%;
     }
 
-    .toolbar .el-button {
+    .header-actions .el-button {
         width: 100%;
+    }
+
+    .network-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .network-item-details {
+        width: 100%;
+        justify-content: flex-start;
     }
 }
 </style>

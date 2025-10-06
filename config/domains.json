@@ -1,1 +1,32 @@
-[{ "id": 1, "name": "GitHub", "domain": "github.com" }]
+[
+    { 
+        "id": 1, 
+        "name": "GitHub", 
+        "domain": "github.com",
+        "type": "ping"
+    },
+    { 
+        "id": 2, 
+        "name": "Google", 
+        "domain": "google.com",
+        "type": "ping"
+    },
+    { 
+        "id": 3, 
+        "name": "百度", 
+        "domain": "baidu.com",
+        "type": "ping"
+    },
+    {
+        "id": 4,
+        "name": "GitHub Web",
+        "url": "https://github.com",
+        "type": "http"
+    },
+    {
+        "id": 5,
+        "name": "本地服务",
+        "url": "http://localhost:3000",
+        "type": "http"
+    }
+]
