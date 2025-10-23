@@ -112,5 +112,9 @@ CertificateImportAssistant/
 The application uses a custom build script to reduce package size:
 
 - **FFmpeg Removal**: Since this application doesn't require media playback capabilities, FFmpeg libraries are automatically removed during the build process using an `afterPack` hook
-- This optimization reduces the package size by approximately 1-2 MB per platform
-- The removal is handled by `build-scripts/afterPack.js` which runs after electron-builder packages the application
+  - Saves approximately 1-3 MB per platform
+- **Locale File Optimization**: Only essential locale files are kept (zh-CN, zh-TW, en-US), removing 50+ unnecessary locale files
+  - Saves approximately 40 MB per platform
+- **Total Package Size Reduction**: ~40-45 MB per build
+
+The removal is handled by `build-scripts/afterPack.js` which runs after electron-builder packages the application
