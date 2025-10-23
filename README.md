@@ -106,3 +106,15 @@ CertificateImportAssistant/
 - The application requires administrator privileges to install certificates to system trust stores
 - All certificate operations are performed using native system commands
 - Certificate content is temporarily written to system temp directory during installation
+
+## Build Optimizations (构建优化)
+
+The application uses a custom build script to reduce package size:
+
+- **FFmpeg Removal**: Since this application doesn't require media playback capabilities, FFmpeg libraries are automatically removed during the build process using an `afterPack` hook
+  - Saves approximately 1-3 MB per platform
+- **Locale File Optimization**: Only essential locale files are kept (zh-CN, zh-TW, en-US), removing 50+ unnecessary locale files
+  - Saves approximately 40 MB per platform
+- **Total Package Size Reduction**: ~40-45 MB per build
+
+The removal is handled by `build-scripts/afterPack.js` which runs after electron-builder packages the application

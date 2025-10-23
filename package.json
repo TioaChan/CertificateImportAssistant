@@ -34,6 +34,7 @@
     "build": {
         "appId": "dev.tioachan.zhkf-assistant",
         "productName": "ZHKF Assistant",
+        "afterPack": "./build-scripts/afterPack.js",
         "directories": {
             "output": "dist"
         },
